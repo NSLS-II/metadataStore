@@ -55,7 +55,7 @@ def save_header(scan_id, owner=None, start_time=None, beamline_id=None,
         beamline_id = os.uname()[1].split('-')[0][2:]
     if header_version is None:
         header_version = CURRENT_HEADER_VERSION
-    if status is None or not status in save_header.status:
+    if status is None or status not in save_header.status:
         status = 'In Progress'
     if custom is None:
         custom = {}

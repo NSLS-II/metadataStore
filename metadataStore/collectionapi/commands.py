@@ -73,7 +73,7 @@ def create_event(event):
         owner = event.get('owner', getpass.getuser())
         data = event.get('data', dict())
 
-        ret = insert_event(scan_id, descriptor_name, seq_no,
+        insert_event(scan_id, descriptor_name, seq_no,
                      description=description,
                      owner=owner, data=data)
 
