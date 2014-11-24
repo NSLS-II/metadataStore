@@ -76,7 +76,6 @@ def create_event(event):
         ret = insert_event(scan_id, descriptor_name, seq_no,
                      description=description,
                      owner=owner, data=data)
-        print("the returned thing is {}".format(ret))
 
     elif isinstance(event, list):
         errors = []
