@@ -8,7 +8,8 @@ from metadataStore.database.collections import Header, BeamlineConfig, Event, Ev
 from metadataStore.sessionManager.databaseInit import metadataLogger
 from bson.objectid import ObjectId
 from .. import header_version as CURRENT_HEADER_VERSION
-
+from collections import defaultdict
+import six
 
 def save_header(scan_id, owner=None, start_time=None, beamline_id=None,
                 header_version=None, status=None, tags=None, custom=None):
@@ -947,3 +948,47 @@ def create_event(event):
     else:
         raise ValueError("Event must be a dict or a list. You provided a {}: "
                          "{}".format(type(event), event))
+
+
+def as_object(events):
+    '''Convert a list of event dictionaries into an object
+
+    Parameters
+    ----------
+    events : list of event dictionaries that are returned from `find_last`
+        or `find2`
+
+    Returns
+    -------
+    Event : object
+        Event object with attributes equal to the data keys in events.  The
+        run header id(s) can be accessed by Event.run_hdr_ids and the event
+        descriptor id(s) can be accessed by Event.ev_desc_ids
+    '''
+    data_dict = defaultdict(list)
+    run_hdr_ids = []
+    ev_desc_ids = []
+    for e in events:
+        if 'time' in e:
+            data_dict['time'].append(e['time'])
+        elif 'time' in e['data']:
+            # this will get caught by the loop over data
+            pass
+        else:
+            # not sure if anything else should be done here
+            pass
+
+        for data_key, data_val in six.iteritems(e['data']):
+            data_dict[data_key].append(data_val)
+
+        run_hdr_ids.append(e['header_id'])
+        ev_desc_ids.append(e['descriptor_id'])
+
+    class EventObject(object):
+        pass
+    # create the events object
+    events_object = EventObject()
+    # set the attributes for the event object
+    for data_key, data_val in six.iteritems(data_dict):
+        setattr(events_object, data_key, data_val)
+    return events_object
