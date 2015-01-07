@@ -26,7 +26,7 @@ The return value will be formatted like this:
             _id: hashed input
             headers: list of run headers specific beamline_config belongs
             beamline_id: string
-            custom: { freem form field }
+            custom: { free form field }
         },
         beamline_config_id2 : {}
         beamline_config_id3 : {}
