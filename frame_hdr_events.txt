@@ -1,6 +1,6 @@
 If you perform a search:
 
-    search(scan_id=2, data=True)
+    metadataStore.analysis.find2(scan_id=2, data=True)
 
 The return value will be formatted like this:
 {
@@ -41,9 +41,13 @@ The return value will be formatted like this:
             tag: list
             type_descriptor: ??
             data_keys: {
-                pv1_alias: {pv1_name: 'XF:23ID1-OP{Slt:3-Ax:X}Mtr'},
-                pv2_alias: {pv2_name: 'pv1_name: 'XF:23ID1-OP{Slt:3-Ax:X}Mtr'},
+                'XF:23ID1-OP{Slt:3-Ax:X}Mtr': 'slt3x',
+                'XF:23ID1-OP{Slt:3-Ax:Y}Mtr': 'slt3y',
                 ....
+            },
+            external_data_keys: {
+                'some_detector_PV': 'det',
+                ...
             }
         },
         event_descriptor_id1: {},
@@ -55,8 +59,11 @@ The return value will be formatted like this:
             _id: hashed input
             data: {
                 data_keys[0]: data0,
-                data_keys[1]: data1,
-                data_keys[N]: dataN
+                ...
+                data_keys[N]: dataN,
+                external_data_keys[0]: _id_into_frame_store,
+                ...
+                external_data_keys[N]: _id_into_frame_store,
             }
             time: datetime (unix/epics?)
             description:
