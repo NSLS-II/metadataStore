@@ -6,15 +6,16 @@ The return value will be formatted like this:
 {
     headers: {
         run_hdr_id1: {
-            _id: hashed input
+            _id: sha1hash
             beamline_id: string
-            beamline_config_id : hashed_id
-            custom: ??
-            end_time: number
+            beamline_config_id : sha1hash
+            custom: { free form field }
+            end_time: unix datetime
             owner: string
             scan_id: int
-            start_time: number
+            start_time: unix datetime
             status: string (In Progress or Complete)
+            tags: list
         },
         run_hdr_id2: {},
         run_hdr_id3: {},
@@ -25,7 +26,7 @@ The return value will be formatted like this:
             _id: hashed input
             headers: list of run headers specific beamline_config belongs
             beamline_id: string
-            custom: dictionary
+            custom: { freem form field }
         },
         beamline_config_id2 : {}
         beamline_config_id3 : {}
@@ -37,17 +38,25 @@ The return value will be formatted like this:
             id: hashed input
             descriptor_name: string
             event_type_id: integer
-            run_header_id: hashed input
-            tag: list
-            type_descriptor: ??
-            data_keys: {
-                'XF:23ID1-OP{Slt:3-Ax:X}Mtr': 'slt3x',
-                'XF:23ID1-OP{Slt:3-Ax:Y}Mtr': 'slt3y',
-                ....
+            run_header_id: sha1hash
+            type_descriptor: string
+            data_keys: [
+                pv1,
+                ...
+                pvN
             },
             external_data_keys: {
-                'some_detector_PV': 'det',
+                ext_pv1,
                 ...
+                ext_pvM
+            },
+            aliases: {
+                pv1: alias0,
+                ...
+                pvN: aliasN,
+                ext_pv1: ext_alias1,
+                ...
+                ext_pvM: ext_aliasM,
             }
         },
         event_descriptor_id1: {},
@@ -58,17 +67,17 @@ The return value will be formatted like this:
         event_id0: {
             _id: hashed input
             data: {
-                data_keys[0]: data0,
+                pv1: python primitive,
                 ...
-                data_keys[N]: dataN,
-                external_data_keys[0]: _id_into_frame_store,
+                pvN: python primitive,
+                ext_pv1: _id_into_frame_store1,
                 ...
-                external_data_keys[N]: _id_into_frame_store,
+                ext_pvM: _id_into_frame_storeM
             }
-            time: datetime (unix/epics?)
-            description:
-            event_descriptor_id: hashed input
-            run_header_id: hashed input
+            time: unix timestamp
+            description: string
+            event_descriptor_id: sha1hash
+            run_header_id: sha1hash
             owner: string
             seq_no: int
         },
