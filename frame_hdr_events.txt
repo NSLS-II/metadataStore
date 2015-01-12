@@ -41,14 +41,14 @@ The return value will be formatted like this:
             run_header_id: sha1hash
             type_descriptor: string
             data_keys: [
-                pv1,
+                pv1: {type: some_python_primitive},
                 ...
-                pvN
+                pvN: {type: some_python_primitive},
             },
             external_data_keys: {
-                ext_pv1,
+                ext_pv1: {location: file_store},
                 ...
-                ext_pvM
+                ext_pvM: {location: file_store},
             },
             aliases: {
                 pv1: alias0,
@@ -57,7 +57,7 @@ The return value will be formatted like this:
                 ext_pv1: ext_alias1,
                 ...
                 ext_pvM: ext_aliasM,
-            }
+            },
         },
         event_descriptor_id1: {},
         event_descriptor_id2: {},
@@ -67,14 +67,26 @@ The return value will be formatted like this:
         event_id0: {
             _id: hashed input
             data: {
-                pv1: python primitive,
+                pv1: {
+                    value: python primitive,
+                    timestamp: some_timestamp,
+                },
                 ...
-                pvN: python primitive,
-                ext_pv1: _id_into_frame_store1,
+                pvN: {
+                    value: python primitive,
+                    timestamp: some_timestamp,
+                },
+                ext_pv1: {
+                    value: _id_into_frame_store1,
+                    timestamp: some_timestamp,
+                },
                 ...
-                ext_pvM: _id_into_frame_storeM
+                ext_pvM: {
+                    value: _id_into_frame_store1,
+                    timestamp: some_timestamp,
+                },
             }
-            time: unix timestamp
+            trigger_time: unix timestamp
             description: string
             event_descriptor_id: sha1hash
             run_header_id: sha1hash
