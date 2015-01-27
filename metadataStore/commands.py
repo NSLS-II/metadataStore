@@ -1,3 +1,9 @@
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
+
+import six
+
+
 __author__ = 'arkilic'
 
 from metadataStore.database.header import Header
@@ -78,10 +84,14 @@ def save_beamline_config(config_params=None):
 
     Parameters
     ----------
+    config_params : dict
+        Name/value pairs that indicate beamline configuration
+        parameters during capturing of data
 
-    config_params: dict
-    Name/value pairs that indicate beamline configuration parameters during capturing of
-
+    Returns
+    -------
+    blc : BeamlineConfig
+        The document added to the collection
     """
 
     connect(db=database, host=host, port=port)
@@ -98,19 +108,27 @@ def save_event_descriptor(event_type_id, descriptor_name, data_keys, **kwargs):
     Parameters
     ----------
 
-    event_type_id:int
-    Integer identifier for a scan, sweep, etc.
+    event_type_id : int
+        Integer identifier for a scan, sweep, etc.
 
-    data_keys: list
-    Provides information about keys of the data dictionary in an event will contain
+    data_keys : dict
+        Provides information about keys of the data dictionary in
+        an event will contain
 
-    descriptor_name: str
-    Unique identifier string for an event. e.g. ascan, dscan, hscan, home, sweep,etc.
+    descriptor_name : str
+        An identifier string for an event. e.g. ascan, dscan,
+        hscan, home, sweep,etc.
 
-    kwargs
-    ----------
-    type_descriptor:dict
-    Additional name/value pairs can be added to an event_descriptor using this flexible field
+    Other Parameters
+    ----------------
+    type_descriptor : dict, optional
+        Additional name/value pairs can be added to an
+        event_descriptor using this flexible field
+
+    Returns
+    -------
+    ev_desc : EventDescriptor
+        The document added to the collection.
 
     """
     connect(db=database, host=host, port=port)
@@ -130,7 +148,7 @@ def save_event_descriptor(event_type_id, descriptor_name, data_keys, **kwargs):
     return event_descriptor
 
 
-def save_event(header, event_descriptor, seq_no, timestamp=None, data=None, **kwargs):
+def save_event(header, event_descriptor, beamline_id, seq_no, timestamp=None, data=None, **kwargs):
     """Create an event in metadataStore database backend
 
     Parameters
@@ -161,7 +179,7 @@ def save_event(header, event_descriptor, seq_no, timestamp=None, data=None, **kw
     connect(db=database, host=host, port=port)
 
     event = Event(header=header.id, descriptor_id=event_descriptor.id, seq_no=seq_no, timestamp=timestamp,
-                  data=data)
+                  beamline_id=beamline_id, data=data)
 
     event.owner = kwargs.pop('owner', None)
 
@@ -184,25 +202,25 @@ def find_header(limit=50, **kwargs):
     ----------
 
     limit: int
-    Number of header objects to be returned
+        Number of header objects to be returned
 
     kwargs
     ---------
 
     scan_id: int
-    Scan identifier. Not unique
+        Scan identifier. Not unique
 
     owner: str
-    User name identifier asscoaited with a scan
+        User name identifier associated with a scan
 
     create_time: dict
-    header insert time. Keys must be start and end to give a range to the search
+        header insert time. Keys must be start and end to give a range to the search
 
     beamline_id: str
-    String identifier for a specific beamline
+        String identifier for a specific beamline
 
     unique_id: str
-    Hashed unique identifier
+        Hashed unique identifier
 
     Usage
 
@@ -370,6 +388,31 @@ def find_last():
     return Header.objects.order_by('-_id')[0:1][0]
 
 
+def search_events_broker(beamline_id, start_time, end_time):
+    """Return a set of events given
+
+    Parameters
+    ----------
+
+    beamline_id: str
+        string identifier for a beamline and its sections
+
+    start_time: float
+        Event time stamp range start time
+
+    end_time: float
+        Event time stamp range end time
+
+    """
+    event_query_dict = dict()
+    event_query_dict['beamline_id'] = beamline_id
+    event_query_dict['event_timestamp'] = {'$gte': start_time, '$lte': end_time}
+
+    result = Event.objects(__raw__=event_query_dict).order_by('-_id')
+    #I did not set any limits to the query because we might return quite a lot of events.
+    return result
+
+
 def __convert2datetime(time_stamp):
     if isinstance(time_stamp, float):
         return datetime.datetime.fromtimestamp(time_stamp)
@@ -377,7 +420,57 @@ def __convert2datetime(time_stamp):
         raise TypeError('Timestamp format is not correct!')
 
 
-def __replace_descriptor_data_key_dots(event_descriptor, direction='in'):
+def __replace_dict_keys(input_dict, src, dst):
+    """
+    Helper function to replace forbidden chars in dictionary keys
+
+    Parameters
+    ----------
+    input_dict : dict
+        The dict to have it's keys replaced
+
+    src : str
+        the string to be replaced
+
+    dst : str
+        The string to replace the src string with
+
+    Returns
+    -------
+    ret : dict
+        The dictionary with all instances of 'src' in the key
+        replaced with 'dst'
+
+    """
+    return {k.replace(src, dst): v for
+            k, v in six.iteritems(input_dict)}
+
+
+def __src_dst(direction):
+    """
+    Helper function to turn in/out into src/dst pair
+
+    Parameters
+    ----------
+    direction : {'in', 'out'}
+        The direction to do conversion (direction relative to mongodb)
+
+    Returns
+    -------
+    src, dst : str
+        The source and destination strings in that order.
+    """
+    if direction == 'in':
+        src, dst = '.', '[dot]'
+    elif direction == 'out':
+        src, dst = '[dot]', '.'
+    else:
+        raise ValueError('Only in/out allowed as direction params')
+
+    return src, dst
+
+
+def __replace_descriptor_data_key_dots(ev_desc, direction='in'):
     """Replace the '.' with [dot]
     I know the name is long. Bite me, it is private routine and I have an IDE
 
@@ -392,24 +485,10 @@ def __replace_descriptor_data_key_dots(event_descriptor, direction='in'):
     If 'out' -> replace [dot] with .
 
     """
-    modified_data_keys = list()
-    if direction is 'in':
-        for data_key in event_descriptor.data_keys:
-            if '.' in data_key:
-                modified_data_keys.append(data_key.replace('.', '[dot]'))
-            else:
-                modified_data_keys.append(data_key)
-        event_descriptor.data_keys = modified_data_keys
-    elif direction is 'out':
-        for data_key in event_descriptor.data_keys:
-            if '[dot]' in data_key:
-                modified_data_keys.append(data_key.replace('[dot]', '.'))
-            else:
-                modified_data_keys.append(data_key)
-        event_descriptor.data_keys = modified_data_keys
-    else:
-        raise ValueError('Only in/out allowed as direction params')
-    return event_descriptor
+    src, dst = __src_dst(direction)
+    ev_desc.data_keys = __replace_dict_keys(ev_desc.data_keys,
+                                            src, dst)
+    return ev_desc
 
 
 def __replace_event_data_key_dots(event, direction='in'):
@@ -427,23 +506,7 @@ def __replace_event_data_key_dots(event, direction='in'):
     If 'out' -> replace [dot] with .
 
     """
-    modified_data_dict = dict()
-
-    if direction is 'in':
-        for key, value in event.data.iteritems():
-            if '.' in key:
-                modified_data_dict[key.replace('.', '[dot]')] = value
-            else:
-                modified_data_dict[key] = value
-        event.data = modified_data_dict
-
-    elif direction is 'out':
-        for key, value in event.data.iteritems():
-            if '[dot]' in key:
-                modified_data_dict[key.replace('[dot]', '.')] = value
-            else:
-                modified_data_dict[key] = value
-        event.data = modified_data_dict
-    else:
-        raise ValueError('Only in/out allowed as direction params')
+    src, dst = __src_dst(direction)
+    event.data = __replace_dict_keys(event.data,
+                                     src, dst)
     return event
