@@ -140,7 +140,7 @@ def insert_event_descriptor(begin_run_event, data_keys, time, event_type=None):
     return event_descriptor
 
 @db_connect
-def insert_event(event_descriptor, time, data, seq_no):
+def insert_event(event_descriptor, time, data, seq_num):
     """Create an event in metadataStore database backend
 
     Parameters
@@ -154,7 +154,7 @@ def insert_event(event_descriptor, time, data, seq_no):
     data : dict
         Dictionary that contains the name value fields for the data associated
         with an event
-    seq_no : int
+    seq_num : int
         Unique sequence number for the event. Provides order of an event in
         the group of events
     """
