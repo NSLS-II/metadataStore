@@ -486,8 +486,6 @@ def find_event(run_start):
     ---------
     run_start: mongoengine.Document
         RunStart object that events possibly fall under
-    limit: int
-        Number of headers to be returned
 
     Returns
     -------
@@ -495,7 +493,25 @@ def find_event(run_start):
         Set of events encapsulated within a RunStart's scope.
         metadatastore.document.Document
     """
-    descriptors = EventDescriptor.objects(run_start=run_start.id)
+    return find_event_by_runstart_id(run_start.id)
+
+
+@_ensure_connection
+def find_event_by_runstart_id(run_start_id):
+    """Returns a set of events given a RunStart object
+
+    Parameters
+    ---------
+    run_start_id: mongoengine.ObjectID
+        RunStart object that events possibly fall under
+
+    Returns
+    -------
+    events: list
+        Set of events encapsulated within a RunStart's scope.
+        metadatastore.document.Document
+    """
+    descriptors = EventDescriptor.objects(run_start=run_start_id)
     descriptors = descriptors.order_by('-_id')
     events = [find_event_given_descriptor(descriptor)
               for descriptor in descriptors]
