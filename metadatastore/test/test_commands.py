@@ -170,19 +170,13 @@ def test_run_stop_insertion():
 #### Testing misc metadatastore functionality ##################################
 
 
-def test_dict_key_replace_rt():
-    """Ensure metadatastore deals with dots in potential data keys correctly
+@raises(ValueError)
+def test_proper_data_format():
+    """Make sure metadatastore correctly barfs if the values of the data
+    dictionary are not formatted as a twople of (value, timestamp)
     """
-    test_d = {'a.b': 1, 'b': .5, 'c.d.e': None}
-    src_in, dst_in = mdsc._src_dst('in')
-    test_d_in = mdsc._replace_dict_keys(test_d, src_in, dst_in)
-    src_out, dst_out = mdsc._src_dst('out')
-    test_d_out = mdsc._replace_dict_keys(test_d_in, src_out, dst_out)
-    assert_equal(test_d_out, test_d)
-
-
-def test_src_dst_fail():
-    assert_raises(ValueError, mdsc._src_dst, 'aardvark')
+    data = {'key': [15, ]}
+    mdsc._validate_data(data)
 
 
 #### Testing metadatastore find functionality ##################################

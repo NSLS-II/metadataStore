@@ -9,6 +9,7 @@ start, stop, step, points_per_step = 0, 6, 1, 7
 deadband_size = 0.9
 num_exposures = 17
 
+
 @common.example
 def run(run_start_uid=None, sleep=0):
     if sleep != 0:

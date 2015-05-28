@@ -99,7 +99,7 @@ class Document(MutableMapping):
         return key in self._fields
 
     @classmethod
-    def from_mongo(cls, mongo_document, cache=None):
+    def from_mongo(cls, mongo_document, cache=None, document_name=None):
         """
         Copy the data out of a mongoengine.Document, including nested
         Documents, but do not copy any of the mongo-specific methods or
@@ -108,17 +108,21 @@ class Document(MutableMapping):
         Parameters
         ----------
         mongo_document : mongoengine.Document
-
-
         cache : dict-like, optional
             Cache of already seen objects in the DB so that we do not
             have to de-reference and build them again.
-
+        document_name : str, optional
+            The name for the document (i.e., name='Run Start')
+            if none, document_name = mongo_document.__class__.__name__
         """
         if cache is None:
             cache = dict()
         document = Document()
-        document._name = mongo_document.__class__.__name__
+        if document_name is None:
+            document_name = mongo_document.__class__.__name__
+
+        document._name = document_name
+
         fields = set(chain(mongo_document._fields.keys(),
                            mongo_document._data.keys()))
 
@@ -147,8 +151,7 @@ class Document(MutableMapping):
             document[field] = attr
         # For debugging, add a human-friendly time_as_datetime attribute.
         if 'time' in document:
-            document.time_as_datetime = datetime.fromtimestamp(
-                    document.time)
+            document.time_as_datetime = datetime.fromtimestamp(document.time)
         return document
 
     @classmethod
@@ -309,7 +312,7 @@ def html_table_repr(obj):
             output += ("<td>" + html_table_repr(value) + "</td>")
             output += "</tr>"
         output += "</table>"
-    elif (isinstance(obj, collections.Iterable) and 
+    elif (isinstance(obj, collections.Iterable) and
           not isinstance(obj, six.string_types) and
           not isinstance(obj, np.ndarray)):
         output = "<table style='border: none;'>"

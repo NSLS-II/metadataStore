@@ -84,6 +84,8 @@ def example(func):
                                              beamline_id='example',
                                              uid=str(uuid.uuid4()),
                                              beamline_config=blc_uid)
+            print('blc_uid %s' % blc_uid)
+            print('run_start_uid %s' % run_start_uid)
         # these events are already the sanitized version, not raw mongo objects
         events = func(run_start_uid, sleep)
         # Infer the end run time from events, since all the times are
@@ -92,6 +94,7 @@ def example(func):
         if make_run_stop:
             run_stop_uid = insert_run_stop(run_start_uid, time=get_time(),
                                            exit_status='success')
+            print('run_stop_uid %s' % run_stop_uid)
             run_stop, = find_run_stops(uid=run_stop_uid)
         return events
     return mock_run_start

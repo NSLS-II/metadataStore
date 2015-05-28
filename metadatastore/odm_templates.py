@@ -185,3 +185,19 @@ class Event(Document):
     data = DictField(required=True)
     time = FloatField(required=True)
     meta = {'indexes': ['-descriptor', '-_id', '-uid'], 'db_alias': ALIAS}
+
+
+class Correction(DynamicDocument):
+    """
+    Notes
+    -----
+    a ``correction_number`` is added on the way out by doing a
+    correction_number = len(Correction.objects(__raw__={'uid': uid}))
+    """
+    uid = StringField(required=True, unique=False)
+    correction_uid = StringField(required=True, unique=True)
+    time = FloatField(required=True)
+    # raw_uid = StringField(required=True, unique=False)
+    # parent_uid = StringField()
+    meta = {'indexes': ['-_id', '-uid', '-time', '-correction_uid'],
+            'db_alias': ALIAS}
