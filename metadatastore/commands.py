@@ -749,14 +749,11 @@ def find_run_starts(use_newest_correction=True, **kwargs):
 
 
 @_ensure_connection
-def find_beamline_configs(use_newest_correction=True, **kwargs):
+def find_beamline_configs(**kwargs):
     """Given search criteria, locate BeamlineConfig Documents.
 
     Parameters
     ----------
-    use_newest_correction : bool
-        True: Find and use the most recent correction for this document
-        False: Do not search for corrections and use the raw data
     start_time : time-like, optional
         time-like representation of the earliest time that a BeamlineConfig
         was created. Valid options are:
@@ -778,9 +775,7 @@ def find_beamline_configs(use_newest_correction=True, **kwargs):
     -------
     beamline_configs : iterable of metadatastore.document.Document objects
     """
-    return _find_documents(BeamlineConfig,
-                           use_newest_correction=use_newest_correction,
-                           **kwargs)
+    return _find_documents(BeamlineConfig, **kwargs)
 
 
 @_ensure_connection

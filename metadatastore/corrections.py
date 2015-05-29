@@ -19,6 +19,7 @@ from metadatastore.commands import _AsDocument, find_corrections
 from metadatastore.odm_templates import BeamlineConfig
 from uuid import uuid4
 import time as ttime
+from collections import Mapping, Iterable
 
 class Foo(object):
     pass
@@ -26,6 +27,12 @@ class Foo(object):
 # subclass the odm tempaltes
 from .odm_templates import (RunStart, EventDescriptor, BeamlineConfig,
                             RunStop, Correction, Event)
+
+def _replace_embedded_document(event_descriptor):
+    new_data_keys = {}
+    for k, v in six.iteritems(event_descriptor.data_keys):
+        new_data_keys[k] = {k1: v1 for k1, v1 in six.iteritems(v)}
+    return new_data_keys
 
 
 def update(mds_document, correction_uid=None):
@@ -67,6 +74,11 @@ def update(mds_document, correction_uid=None):
     # of the correction document
     fields_to_skip = ['uid', 'correction_uid', 'time']
 
+    # have to look for Embedded Documents and turn them into straight
+    # dictionaries
+    if mds_document._name == "EventDescriptor":
+        mds_document.data_keys = _replace_embedded_document(mds_document)
+
     for k, v in six.iteritems(mds_document):
         if k in fields_to_skip:
             continue
@@ -84,6 +96,6 @@ def update(mds_document, correction_uid=None):
     if mds_document._name == "Correction":
         original_document_type = mds_document.original_document_type
         setattr(c, 'original_document_type', original_document_type)
-
+    print(vars(c))
     c.save(validate=True, write_concern={"w": 1})
     return _AsDocument()(_dereference_uid_fields(c))
