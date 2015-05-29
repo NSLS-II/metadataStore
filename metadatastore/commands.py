@@ -816,13 +816,22 @@ def find_run_stops(run_start=None, use_newest_correction=True, **kwargs):
     run_stop : iterable of metadatastore.document.Document objects
     """
     if run_start:
-        run_start = _get_mongo_document(run_start, RunStart)
-        kwargs['run_start_id'] = run_start.id
+        kwargs['run_start_id'] = _format_run_start(run_start,
+                                                   use_newest_correction)
     _normalize_object_id(kwargs, 'run_start_id')
     print("kwargs: {}".format(kwargs))
     return _find_documents(RunStop,
                            use_newest_correction=use_newest_correction,
                            **kwargs)
+
+def _format_run_start(run_start, use_newest_correction):
+    if use_newest_correction:
+        if isinstance(run_start, Document):
+            run_start = run_start.uid
+        run_start, = find_corrections(uid=run_start, newest_only=True)
+    mongo_document = _get_mongo_document(run_start, RunStart)
+    print(vars(mongo_document))
+    return mongo_document
 
 
 @_ensure_connection
@@ -864,8 +873,8 @@ def find_event_descriptors(run_start=None, use_newest_correction=True,
     _format_time(kwargs)
     # get the actual mongo document
     if run_start:
-        run_start = _get_mongo_document(run_start, RunStart)
-        kwargs['run_start_id'] = run_start.id
+        kwargs['run_start_id'] = _format_run_start(run_start,
+                                                   use_newest_correction)
 
     _normalize_object_id(kwargs, '_id')
     _normalize_object_id(kwargs, 'run_start_id')
