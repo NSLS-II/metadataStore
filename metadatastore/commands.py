@@ -545,21 +545,25 @@ def _get_mongo_document(document, document_cls):
 
 
 def _dereference_uid_fields(correction_document):
-    uid_field_names = ['descriptor', 'run_start', 'beamline_config']
+    uid_field_name_map = {'descriptor': Correction,
+                          'run_start': Correction,
+                          'beamline_config': BeamlineConfig}
     _as_document = _AsDocument()
     for k, v in six.iteritems(correction_document._data):
         if hasattr(v, 'uid'):
             v = v.uid
-        if k in uid_field_names:
+        if k in uid_field_name_map:
+            mds_cls = uid_field_name_map[k]
             # assume it is the uid for a document in another collection
-            correction = Correction.objects(__raw__={'uid': v}).order_by('-id')
+            correction = mds_cls.objects(__raw__={'uid': v}).order_by('-id')
             if not len(correction):
                 # see if the uid is pointing to a single correction document
-                correction = Correction.objects(
+                correction = mds_cls.objects(
                     __raw__={'correction_uid': v}).order_by('-id')
                 if not len(correction):
-                    raise ValueError("No documents were found in the "
-                                     "Correction collection for uid %s" % v)
+                    raise ValueError(
+                        "No documents were found in the %s collection for uid "
+                        "%s" % (str(mds_cls), v))
                 correction = correction[0]
             else:
                 correction = correction[0]

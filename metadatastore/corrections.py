@@ -16,6 +16,7 @@ from mongoengine.document import DynamicDocument
 from mongoengine.fields import StringField, ReferenceField
 import metadatastore
 from metadatastore.commands import _AsDocument, find_corrections
+from metadatastore.odm_templates import BeamlineConfig
 from uuid import uuid4
 import time as ttime
 
@@ -51,8 +52,17 @@ def update(mds_document, correction_uid=None):
     if mds_document._name == 'Event':
         raise ValueError("You are not allowed to modify Events")
 
-    c = Correction(uid=mds_document.uid, correction_uid=correction_uid,
-                   time=ttime.time())
+    if mds_document._name in ['BeamlineConfig']:
+        mds_cls = globals()[mds_document._name]
+        c = mds_cls(time=ttime.time(), uid=correction_uid)
+    else:
+        c = Correction(uid=mds_document.uid, correction_uid=correction_uid,
+                       time=ttime.time())
+        original_document_type = mds_document._name
+        if mds_document._name == "Correction":
+            original_document_type = mds_document.original_document_type
+
+        setattr(c, 'original_document_type', original_document_type)
     # skipping uid because it is already taken care of in the initialization
     # of the correction document
     fields_to_skip = ['uid', 'correction_uid', 'time']
@@ -73,8 +83,7 @@ def update(mds_document, correction_uid=None):
 
     if mds_document._name == "Correction":
         original_document_type = mds_document.original_document_type
-
-    setattr(c, 'original_document_type', original_document_type)
+        setattr(c, 'original_document_type', original_document_type)
 
     c.save(validate=True, write_concern={"w": 1})
     return _AsDocument()(_dereference_uid_fields(c))
