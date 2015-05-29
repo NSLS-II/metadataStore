@@ -24,11 +24,14 @@ def run(run_start_uid=None, sleep=0):
     # Create Event Descriptors
     data_keys1 = {'point_det': dict(source='PV:ES:PointDet', dtype='number')}
     data_keys2 = {'Tsam': dict(source='PV:ES:Tsam', dtype='number')}
-    ev_desc1_uid = insert_event_descriptor(run_start=run_start_uid,
-                                           data_keys=data_keys1, time=common.get_time())
-    ev_desc2_uid = insert_event_descriptor(run_start=run_start_uid,
-                                           data_keys=data_keys2, time=common.get_time())
-
+    desc1_uid = insert_event_descriptor(run_start=run_start_uid,
+                                        data_keys=data_keys1,
+                                        time=common.get_time())
+    print('descriptor1_uid = "%s"' % desc1_uid)
+    desc2_uid = insert_event_descriptor(run_start=run_start_uid,
+                                        data_keys=data_keys2,
+                                        time=common.get_time())
+    print('descriptor2_uid = "%s"' % desc2_uid)
     # Create Events.
     events = []
 
@@ -47,7 +50,7 @@ def run(run_start_uid=None, sleep=0):
 
     # Temperature Events
     for i, (time, temp) in enumerate(zip(*deadbanded_ramp)):
-        time = float(time) + base_time 
+        time = float(time) + base_time
         data = {'Tsam': temp}
         timestamps = {'Tsam': time}
         event_dict = dict(descriptor=ev_desc2_uid, time=time,
