@@ -26,7 +26,8 @@ __all__ = ['insert_beamline_config', 'insert_run_start', 'insert_event',
            'insert_run_stop', 'insert_event_descriptor', 'find_run_stops',
            'find_beamline_configs', 'find_event_descriptors', 'find_last',
            'find_events', 'find_run_starts', 'db_connect', 'db_disconnect',
-           'format_data_keys', 'format_events', 'reorganize_event']
+           'format_data_keys', 'format_events', 'reorganize_event',
+           'find_corrections']
 
 
 def _ensure_connection(func):
@@ -543,28 +544,38 @@ def _get_mongo_document(document, document_cls):
     return mongo_document
 
 
-def _find_updated_documents(document_list):
-    """Helper function to find updated documents in a document list
-
-    Parameters
-    ----------
-    document_list : list
-        List of documents to find the most recent update for
-    """
-    corrected_run_starts = []
-    for rs in document_list:
-        run_start = find_corrections(uid=rs.uid)
-        if not run_start:
-            run_start = rs
-        corrected_run_starts.append(run_start)
-    return corrected_run_starts
+def _dereference_uid_fields(correction_document):
+    uid_field_names = ['descriptor', 'run_start', 'beamline_config']
+    _as_document = _AsDocument()
+    for k, v in six.iteritems(correction_document._data):
+        if hasattr(v, 'uid'):
+            v = v.uid
+        if k in uid_field_names:
+            # assume it is the uid for a document in another collection
+            correction = Correction.objects(__raw__={'uid': v}).order_by('-id')
+            if not len(correction):
+                # see if the uid is pointing to a single correction document
+                correction = Correction.objects(
+                    __raw__={'correction_uid': v}).order_by('-id')
+                if not len(correction):
+                    raise ValueError("No documents were found in the "
+                                     "Correction collection for uid %s" % v)
+                correction = correction[0]
+            else:
+                correction = correction[0]
+            # correction = _as_document(correction)
+            correction = _dereference_uid_fields(correction)
+            setattr(correction_document, k, correction)
+    return correction_document
 
 
 @_ensure_connection
-def find_corrections(**kwargs):
+def find_corrections(newest_only=False, dereference_uids=True, **kwargs):
     """
     Parameters
     ----------
+    newest_only : bool, optional
+        True: only return the newest one
     uid : str, optional
         The uid of the original metadatastore Document, shared between all
         instances of its Corrections
@@ -586,13 +597,67 @@ def find_corrections(**kwargs):
     uid : str, optional
         Globally unique id string provided to metadatastore
     """
+    _as_document = _AsDocument()
+    return (_as_document(c) for c in _find_corrections_helper(
+        newest_only=newest_only, dereference_uids=dereference_uids, **kwargs))
+
+
+def _find_corrections_helper(newest_only=True, dereference_uids=True, **kwargs):
+    """Helper function that does not nuke mongo fields.
+
+    See ``find_corrections`` for relevant kwargs
+
+    Parameters
+    ----------
+    newest_only : bool, optional
+        True: only return the newest one. Defaults to True
+    for all other kwargs, see ``find_corrections`` docstring
+
+    Returns
+    -------
+    corrections : list
+        List of mongo objects with uid fields dereferenced
+    """
     _normalize_object_id(kwargs, '_id')
     _format_time(kwargs)
-    correction = Correction.objects(__raw__=kwargs).order_by('-id')[0]
-    return correction
+    corrections = Correction.objects(__raw__=kwargs).order_by('-id')
+    if not corrections:
+        return []
+    if newest_only:
+        corrections = [corrections[0]]
+    if dereference_uids:
+        corrections = [_dereference_uid_fields(correction) for correction in
+                       corrections]
+    else:
+        corrections = [c for c in corrections]
+    return corrections
+
+
+def _find_updated_documents(document):
+    """Helper function to find updated documents in a document list
+
+    This helper function makes the assumption that, if you are calling it,
+    you only care about getting the latest documents, this API does not
+    support matching up a specific combination of RunStart, EventDescriptor,
+    RunStop documents, etc.
+
+    Parameters
+    ----------
+    document : mongoengine.Document
+        A documents to find an update for
+    """
+    # search for mongo documents with the find_corrections_helper
+    correction = _find_corrections_helper(uid=document.uid)
+    # if there are no corrections, return the input document
+    if correction:
+        # only grab the newest correction
+        return correction[0]
+    # if there are no corrections, return the original
+    return document
+
 
 def _find_documents(DocumentClass, **kwargs):
-    """Helper function to extract copy/paste code from find functions
+    """Helper function to extract copy/paste code from find_* functions
 
     Parameters
     ----------
@@ -609,14 +674,15 @@ def _find_documents(DocumentClass, **kwargs):
     _normalize_object_id(kwargs, '_id')
     _format_time(kwargs)
     with no_dereference(DocumentClass) as DocumentClass:
-        # ordering by '-_id' does a reverse time ordering (newest first)
-        mds_documents = DocumentClass.objects(__raw__=kwargs).order_by('-id')
+        # ordering by '-_id' sorts by newest first
+        search_results = DocumentClass.objects(__raw__=kwargs).order_by('-id')
         if kwargs.pop('use_newest_correction', None):
             print("searching for newer documents")
-            mds_documents = _find_updated_documents(mds_documents)
+            search_results = [_find_updated_documents(res) for res in
+                              search_results]
 
         _as_document = _AsDocument()
-        return (_as_document(document) for document in mds_documents)
+        return (_as_document(document) for document in search_results)
 
 
 @_ensure_connection

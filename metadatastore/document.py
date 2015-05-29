@@ -220,57 +220,8 @@ class Document(MutableMapping):
             infostr = ''
         return "<%s Document%s>" % (self._name, infostr)
 
-    def _str_helper(self, name=None, indent=0):
-        """Recursive document walker and formatter
-
-        Parameters
-        ----------
-        name : str, optional
-            Document header name. Defaults to ``self._name``
-        indent : int, optional
-            The indentation level. Defaults to starting at 0 and adding one tab
-            per recursion level
-        """
-        headings = [
-            # characters recommended as headers by ReST docs
-            '=', '-', '`', ':', '.', "'", '"', '~', '^', '_', '*', '+', '#',
-            # all other valid header characters according to ReST docs
-            '!', '$', '%', '&', '(', ')', ',', '/', ';', '<', '>', '?', '@',
-            '[', '\\', ']', '{', '|', '}'
-        ]
-
-        mapping = collections.OrderedDict(
-            {idx: char for idx, char in enumerate(headings)})
-        ret = "\n%s\n%s" % (name, mapping[indent]*len(name))
-
-        documents = []
-        name_width = 16
-        value_width = 40
-        for name, value in sorted(self.items()):
-            if isinstance(value, Document):
-                documents.append((name, value))
-            elif name == 'event_descriptors':
-                for val in value:
-                    documents.append((name, val))
-            elif name == 'data_keys':
-                ret += "\n%s" % _format_data_keys_dict(value).__str__()
-            elif isinstance(value, Mapping):
-                # format dicts reasonably
-                ret += "\n%-{}s:".format(name_width, value_width) % (name)
-                ret += _format_dict(value, name_width, value_width, name, tabs=1)
-            else:
-                ret += ("\n%-{}s: %-{}s".format(name_width, value_width) %
-                        (name[:16], value))
-        for name, value in documents:
-            ret += "\n%s" % (value._str_helper(value._name, indent+1))
-            # ret += "\n"
-        ret = ret.split('\n')
-        ret = ["%s%s" % ('  '*indent, line) for line in ret]
-        ret = "\n".join(ret)
-        return ret
-
     def __str__(self):
-        return self._str_helper(self._name)
+        return _str_helper(self)
 
     def _repr_html_(self):
         return html_table_repr(self)
@@ -333,3 +284,58 @@ def html_table_repr(obj):
     else:
         return str(obj)
     return output
+
+
+def _str_helper(document, name=None, indent=0):
+    """Recursive document walker and formatter
+
+    Parameters
+    ----------
+    name : str, optional
+        Document header name. Defaults to ``self._name``
+    indent : int, optional
+        The indentation level. Defaults to starting at 0 and adding one tab
+        per recursion level
+    """
+    if name is None:
+        name = document._name
+        if name == "Correction":
+            name = document.original_document_type + " -- Correction"
+
+    headings = [
+        # characters recommended as headers by ReST docs
+        '=', '-', '`', ':', '.', "'", '"', '~', '^', '_', '*', '+', '#',
+        # all other valid header characters according to ReST docs
+        '!', '$', '%', '&', '(', ')', ',', '/', ';', '<', '>', '?', '@',
+        '[', '\\', ']', '{', '|', '}'
+    ]
+
+    mapping = collections.OrderedDict(
+        {idx: char for idx, char in enumerate(headings)})
+    ret = "\n%s\n%s" % (name, mapping[indent]*len(name))
+
+    documents = []
+    name_width = 16
+    value_width = 40
+    for name, value in sorted(document.items()):
+        if isinstance(value, Document):
+            documents.append((name, value))
+        elif name == 'event_descriptors':
+            for val in value:
+                documents.append((name, val))
+        elif name == 'data_keys':
+            ret += "\n%s" % _format_data_keys_dict(value).__str__()
+        elif isinstance(value, Mapping):
+            # format dicts reasonably
+            ret += "\n%-{}s:".format(name_width, value_width) % (name)
+            ret += _format_dict(value, name_width, value_width, name, tabs=1)
+        else:
+            ret += ("\n%-{}s: %-{}s".format(name_width, value_width) %
+                    (name[:16], value))
+    for name, value in documents:
+        ret += "\n%s" % (_str_helper(value, indent=indent+1))
+        # ret += "\n"
+    ret = ret.split('\n')
+    ret = ["%s%s" % ('  '*indent, line) for line in ret]
+    ret = "\n".join(ret)
+    return ret
