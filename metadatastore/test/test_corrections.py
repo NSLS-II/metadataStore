@@ -204,7 +204,7 @@ def test_find_corrections():
     newest_run_start, = find_run_starts(uid=run_start_uid)
 
     run_start_corrections = list(find_corrections(uid=run_start_uid))
-    
+
     assert_equal(run_start_corrections[0].correction_uid,
                  newest_run_start.correction_uid)
     assert_equal(run_start_corrections[0].uid,
@@ -217,3 +217,10 @@ def test_find_corrections():
 def test_replace_embedded_document():
     descriptor1, = find_event_descriptors(uid=descriptor1_uid)
     assert(isinstance(descriptor1.data_keys, dict))
+
+
+@raises(ValueError)
+def test_event_update():
+    events = find_events(descriptor=descriptor1_uid)
+    ev0 = next(events)
+    update(ev0)
