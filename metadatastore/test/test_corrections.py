@@ -65,7 +65,7 @@ def _insert_document_helper(find_function, uid, attr_name, attr_value):
     # save it
     doc2 = update(doc1)
     # reset doc1 to the original value
-    doc1, = find_function(uid=uid, use_newest_correction=False)
+    doc1, = find_function(uid=uid, newest=False)
     # search for it from metadatastore
     doc3, = find_function(uid=doc2.uid)
     # make sure that doc2 and doc3 have the same sample_to_detector_distance
@@ -106,8 +106,8 @@ def _update_document_helper(find_function, document_name, doc1, doc2, doc3):
     assert_equal(doc1.uid, doc2.uid)
     assert_equal(doc2.uid, doc3.uid)
 
-    # exercise the use_newest_correction kwarg
-    doc4, = find_function(uid=doc1.uid, use_newest_correction=False)
+    # exercise the newest kwarg
+    doc4, = find_function(uid=doc1.uid, newest=False)
     assert_equal(doc1.uid, doc4.uid)
     doc5, = find_function(uid=doc1.uid)
     assert_equal(doc3.uid, doc5.uid)
@@ -130,24 +130,24 @@ def test_update_run_stop():
     _update_document_helper(find_run_stops, "RunStop", doc1, doc2, doc3)
 
     original_run_start, = find_run_starts(uid=run_start_uid,
-                                          use_newest_correction=False)
+                                          newest=False)
     # ensure there is an updated run start document in the Corrections
     # collection
     update(original_run_start)
     newest_run_start, = find_run_starts(uid=run_start_uid,
-                                        use_newest_correction=True)
+                                        newest=True)
 
     newest_run_stop, = find_run_stops(uid=run_stop_uid,
-                                      use_newest_correction=True)
+                                      newest=True)
     original_run_stop, = find_run_stops(uid=run_stop_uid,
-                                        use_newest_correction=False)
+                                        newest=False)
 
     # Make sure that the newest_run_stop is a correction and that its
     # run_start is also a correction and that their uid's are equivalent
     assert_equal(newest_run_stop.run_start.correction_uid,
                  newest_run_start.correction_uid)
     # Make sure that the original run stop can still be found with the
-    # `use_newest_correction` flag and that its run_start is also a raw document
+    # `newest` flag and that its run_start is also a raw document
     assert_equal(original_run_start.uid, original_run_stop.run_start.uid)
     for doc in [original_run_start, original_run_stop]:
         try:
@@ -168,24 +168,24 @@ def test_update_event_descriptor():
                             doc2, doc3)
 
     original_run_start, = find_run_starts(uid=run_start_uid,
-                                          use_newest_correction=False)
+                                          newest=False)
     # ensure there is an updated run start document in the Corrections
     # collection
     update(original_run_start)
     newest_run_start, = find_run_starts(uid=run_start_uid,
-                                        use_newest_correction=True)
+                                        newest=True)
 
     newest_descriptor, = find_event_descriptors(uid=descriptor1_uid,
-                                                use_newest_correction=True)
+                                                newest=True)
     original_descriptor, = find_event_descriptors(uid=descriptor1_uid,
-                                                  use_newest_correction=False)
+                                                  newest=False)
 
     # Make sure that the newest_run_stop is a correction and that its
     # run_start is also a correction and that their uid's are equivalent
     assert_equal(newest_descriptor.run_start.correction_uid,
                  newest_run_start.correction_uid)
     # Make sure that the original run stop can still be found with the
-    # `use_newest_correction` flag and that its run_start is also a raw document
+    # `newest` flag and that its run_start is also a raw document
     assert_equal(original_run_start.uid, original_descriptor.run_start.uid)
     for doc in [original_run_start, original_descriptor]:
         try:
@@ -200,7 +200,7 @@ def test_update_event_descriptor():
 
 def test_find_corrections():
     original_run_start, = find_run_starts(uid=run_start_uid,
-                                          use_newest_correction=False)
+                                          newest=False)
     newest_run_start, = find_run_starts(uid=run_start_uid)
 
     run_start_corrections = list(find_corrections(uid=run_start_uid))

@@ -96,6 +96,5 @@ def update(mds_document, correction_uid=None):
     if mds_document._name == "Correction":
         original_document_type = mds_document.original_document_type
         setattr(c, 'original_document_type', original_document_type)
-    print(vars(c))
     c.save(validate=True, write_concern={"w": 1})
     return _AsDocument()(_dereference_uid_fields(c))

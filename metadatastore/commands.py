@@ -573,11 +573,11 @@ def _dereference_uid_fields(correction_document):
 
 
 @_ensure_connection
-def find_corrections(newest_only=False, dereference_uids=True, **kwargs):
+def find_corrections(newest=False, dereference_uids=True, **kwargs):
     """
     Parameters
     ----------
-    newest_only : bool, optional
+    newest : bool, optional
         True: only return the newest one
     uid : str, optional
         The uid of the original metadatastore Document, shared between all
@@ -602,17 +602,17 @@ def find_corrections(newest_only=False, dereference_uids=True, **kwargs):
     """
     _as_document = _AsDocument()
     return (_as_document(c) for c in _find_corrections_helper(
-        newest_only=newest_only, dereference_uids=dereference_uids, **kwargs))
+        newest=newest, dereference_uids=dereference_uids, **kwargs))
 
 
-def _find_corrections_helper(newest_only=True, dereference_uids=True, **kwargs):
+def _find_corrections_helper(newest=True, dereference_uids=True, **kwargs):
     """Helper function that does not nuke mongo fields.
 
     See ``find_corrections`` for relevant kwargs
 
     Parameters
     ----------
-    newest_only : bool, optional
+    newest : bool, optional
         True: only return the newest one. Defaults to True
     for all other kwargs, see ``find_corrections`` docstring
 
@@ -626,7 +626,7 @@ def _find_corrections_helper(newest_only=True, dereference_uids=True, **kwargs):
     corrections = Correction.objects(__raw__=kwargs).order_by('-id')
     if not corrections:
         return []
-    if newest_only:
+    if newest:
         corrections = [corrections[0]]
     if dereference_uids:
         corrections = [_dereference_uid_fields(correction) for correction in
@@ -673,7 +673,7 @@ def _find_documents(DocumentClass, **kwargs):
     _format_time(kwargs)
     with no_dereference(DocumentClass) as DocumentClass:
         # ordering by '-_id' sorts by newest first
-        use_newest_correction = kwargs.pop('use_newest_correction', None)
+        newest = kwargs.pop('newest', None)
         search_results = DocumentClass.objects(__raw__=kwargs).order_by('-id')
         print('search_results: {}'.format(search_results))
         return search_results
@@ -684,7 +684,7 @@ def _correct_results(search_results):
     print("searching for newer documents")
     corrected_results = []
     for res in search_results:
-        corrected = _find_corrections_helper(newest_only=True,
+        corrected = _find_corrections_helper(newest=True,
                                              uid=res.uid)
         if corrected:
             res = corrected[0]
@@ -708,12 +708,12 @@ def _get_uid(document):
 
 
 @_ensure_connection
-def find_run_starts(use_newest_correction=True, **kwargs):
+def find_run_starts(newest=True, **kwargs):
     """Given search criteria, locate RunStart Documents.
 
     Parameters
     ----------
-    use_newest_correction : bool
+    newest : bool
         True: Find and use the most recent correction for this document
         False: Do not search for corrections and use the raw data
     start_time : time-like, optional
@@ -763,7 +763,7 @@ def find_run_starts(use_newest_correction=True, **kwargs):
     """
     _as_document = _AsDocument()
     mongo_run_starts = _find_documents(RunStart, **kwargs)
-    if use_newest_correction:
+    if newest:
         mongo_run_starts = _correct_results(mongo_run_starts)
     # lazily turn the mongo objects into safe objects via generator
     return (_as_document(doc) for doc in mongo_run_starts)
@@ -803,7 +803,7 @@ def find_beamline_configs(**kwargs):
 
 
 @_ensure_connection
-def find_run_stops(run_start=None, use_newest_correction=True, **kwargs):
+def find_run_stops(run_start=None, newest=True, **kwargs):
     """Given search criteria, locate RunStop Documents.
 
     Parameters
@@ -811,7 +811,7 @@ def find_run_stops(run_start=None, use_newest_correction=True, **kwargs):
     run_start : metadatastore.document.Document or str, optional
         The metadatastore run start document or the metadatastore uid to get
         the corresponding run end for
-    use_newest_correction : bool
+    newest : bool
         True: Find and use the most recent correction for this document
         False: Do not search for corrections and use the raw data
     start_time : time-like, optional
@@ -846,7 +846,7 @@ def find_run_stops(run_start=None, use_newest_correction=True, **kwargs):
 
     _normalize_object_id(kwargs, 'run_start_id')
     mongo_run_stops = _find_documents(RunStop, **kwargs)
-    if use_newest_correction:
+    if newest:
         mongo_run_stops = _correct_results(mongo_run_stops)
     _as_document = _AsDocument()
     # lazily turn the mongo objects into safe objects via generator
@@ -854,7 +854,7 @@ def find_run_stops(run_start=None, use_newest_correction=True, **kwargs):
 
 
 @_ensure_connection
-def find_event_descriptors(run_start=None, use_newest_correction=True,
+def find_event_descriptors(run_start=None, newest=True,
                            **kwargs):
     """Given search criteria, locate EventDescriptor Documents.
 
@@ -867,7 +867,7 @@ def find_event_descriptors(run_start=None, use_newest_correction=True,
         if ``str``:
             Globally unique id string provided to metadatastore for the
             RunStart Document.
-    use_newest_correction : bool
+    newest : bool
 
     start_time : time-like, optional
         time-like representation of the earliest time that an EventDescriptor
@@ -901,7 +901,7 @@ def find_event_descriptors(run_start=None, use_newest_correction=True,
     _normalize_object_id(kwargs, 'run_start_id')
     _as_document = _AsDocument()
     mongo_descriptors = _find_documents(EventDescriptor, **kwargs)
-    if use_newest_correction:
+    if newest:
         mongo_descriptors = _correct_results(mongo_descriptors)
     return (_as_document(doc) for doc in mongo_descriptors)
 
