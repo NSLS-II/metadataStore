@@ -63,7 +63,9 @@ def _insert_document_helper(find_function, uid, attr_name, attr_value):
     # add a new field
     setattr(doc1, attr_name, attr_value)
     # save it
-    doc2 = update(doc1)
+    update(doc1)
+    doc2 = doc1
+    doc1, = find_function(uid=uid)
     # reset doc1 to the original value
     doc1, = find_function(uid=uid, newest=False)
     # search for it from metadatastore
@@ -134,6 +136,10 @@ def test_update_run_stop():
     # ensure there is an updated run start document in the Corrections
     # collection
     update(original_run_start)
+    # since update modifies original_run_start in-place, we need to grab the
+    # original one again
+    original_run_start, = find_run_starts(uid=run_start_uid,
+                                          newest=False)
     newest_run_start, = find_run_starts(uid=run_start_uid,
                                         newest=True)
 
@@ -172,8 +178,10 @@ def test_update_event_descriptor():
     # ensure there is an updated run start document in the Corrections
     # collection
     update(original_run_start)
-    newest_run_start, = find_run_starts(uid=run_start_uid,
-                                        newest=True)
+    # since update modifies original_run_start in-place, we need to grab the
+    # original one again
+    original_run_start, = find_run_starts(uid=run_start_uid, newest=False)
+    newest_run_start, = find_run_starts(uid=run_start_uid, newest=True)
 
     newest_descriptor, = find_event_descriptors(uid=descriptor1_uid,
                                                 newest=True)

@@ -18,6 +18,8 @@ import metadatastore
 from metadatastore.commands import _AsDocument, find_corrections
 from metadatastore.odm_templates import BeamlineConfig
 from uuid import uuid4
+from itertools import chain
+
 import time as ttime
 from collections import Mapping, Iterable
 
@@ -41,6 +43,9 @@ def update(mds_document, correction_uid=None):
     Note that this does not actually touch the raw data, it creates a
     RunStart document in a separate document with only the diff from the
     original RunStart document
+
+    Note2 that the mds_document is going to be updated IN-PLACE to the new
+    document
 
     Parameters
     ----------
@@ -86,8 +91,8 @@ def update(mds_document, correction_uid=None):
             # reference document objects with their uid only
             # this will be dereferenced via the `_dereference_uid_fields`
             # function in `metadatastore.commands.py`
-            document = update(v)
-            setattr(c, k, document.uid)
+            update(v)
+            setattr(c, k, v.uid)
         else:
             setattr(c, k, v)
 
@@ -97,4 +102,10 @@ def update(mds_document, correction_uid=None):
         original_document_type = mds_document.original_document_type
         setattr(c, 'original_document_type', original_document_type)
     c.save(validate=True, write_concern={"w": 1})
-    return _AsDocument()(_dereference_uid_fields(c))
+
+    documentized = _AsDocument()(_dereference_uid_fields(c))
+    # update the correction in-place
+    for k, v in six.iteritems(documentized):
+        mds_document[k] = v
+    mds_document._name = documentized._name
+    # return _AsDocument()(_dereference_uid_fields(c))
