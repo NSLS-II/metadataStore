@@ -1184,7 +1184,7 @@ class Document(MutableMapping):
                 except KeyError:
 
                     ref_obj = ref_klass.document_type_obj
-
+                    #todo grab the updated event descriptor here
                     ref_doc = cls.from_mongo(ref_obj.objects.get(id=v),
                                              use_newest=True)
 
