@@ -11,7 +11,7 @@ ALIAS = 'mds'
 
 
 __all__ = ['BeamlineConfig', 'RunStart', 'RunStop', 'DataKey',
-           'EventDescriptor', 'Event']
+           'EventDescriptor', 'Event', 'Correction']
 
 
 class BeamlineConfig(DynamicDocument):

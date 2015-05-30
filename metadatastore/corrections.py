@@ -1,34 +1,18 @@
 from __future__ import (unicode_literals, print_function, division,
                         absolute_import)
-import six
-from functools import wraps
-from . import conf
-from .commands import (_ensure_connection, find_run_starts,
-                       _get_mongo_document, db_disconnect, db_connect,
-                       _dereference_uid_fields)
-
-from mongoengine.context_managers import switch_collection
-from mongoengine.connection import (register_connection, disconnect,
-                                    get_connection, connect)
-from .document import Document
-
-from mongoengine.document import DynamicDocument
-from mongoengine.fields import StringField, ReferenceField
-import metadatastore
-from metadatastore.commands import _AsDocument, find_corrections
-from metadatastore.odm_templates import BeamlineConfig
 from uuid import uuid4
-from itertools import chain
-
 import time as ttime
-from collections import Mapping, Iterable
+import logging
 
-class Foo(object):
-    pass
+import six
+import metadatastore
+from metadatastore.commands import _AsDocument
+from .odm_templates import *
 
-# subclass the odm tempaltes
-from .odm_templates import (RunStart, EventDescriptor, BeamlineConfig,
-                            RunStop, Correction, Event)
+from .commands import (_dereference_uid_fields)
+
+logger = logging.getLogger(__name__)
+
 
 def _replace_embedded_document(event_descriptor):
     new_data_keys = {}
@@ -58,14 +42,32 @@ def update(mds_document, correction_uid=None):
     -------
     correction_document : metadatastore.odm_templates.Correction
     """
+    _as_document = _AsDocument()
     if correction_uid is None:
         correction_uid = str(uuid4())
 
     if mds_document._name == 'Event':
         raise ValueError("You are not allowed to modify Events")
 
-    if mds_document._name in ['BeamlineConfig']:
+    # get the original document
+    if 'Correction' in mds_document._name:
+        mds_cls = Correction
+        # the unique identifier for the Correction collection is
+        # `correction_uid`, not `uid`. `uid` refers to the original document
+        # in the other collections.
+        kw = {'correction_uid': mds_document.correction_uid}
+    else:
         mds_cls = globals()[mds_document._name]
+        kw = {'uid': mds_document.uid}
+    original_document = _as_document(mds_cls.objects.get(**kw))
+    if mds_document == original_document:
+        # the documents are identical, no need to create a new one!
+        logger.debug('mds_document {} and original_document {} are identical. '
+                     'No update required'.format(mds_document,
+                                                 original_document))
+        return
+
+    if mds_document._name in ['BeamlineConfig']:
         c = mds_cls(time=ttime.time(), uid=correction_uid)
     else:
         c = Correction(uid=mds_document.uid, correction_uid=correction_uid,

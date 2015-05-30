@@ -5,7 +5,8 @@ import time as ttime
 import datetime
 
 import pytz
-from nose.tools import assert_equal, assert_raises, raises, assert_not_equal
+from nose.tools import (assert_equal, assert_raises, raises,
+                        assert_not_equal, assert_in)
 import metadatastore.commands as mdsc
 from metadatastore.utils.testing import mds_setup, mds_teardown
 from metadatastore.examples.sample_data import temperature_ramp
@@ -220,6 +221,25 @@ def test_find_corrections():
     assert_equal(run_start_corrections[0].uid,
                  newest_run_start.uid)
 
+
+def test_update_identical_document():
+    # grab the unmodified run_start
+    run_start, = find_run_starts(uid=run_start_uid, newest=False)
+
+    update(run_start)
+
+    assert_equal(run_start.uid, run_start_uid)
+
+    # modify the run start and update it
+    run_start.published = True
+    update(run_start)
+    # it should now be a Correction document
+    assert_in('Correction', run_start._name)
+    # assert_not_equal(run_start.uid, run_start_uid)
+    new_uid = run_start.uid
+    # but another call to update should not create a new uid
+    update(run_start)
+    assert_equal(new_uid, run_start.uid)
 
 
 def test_replace_embedded_document():
