@@ -394,8 +394,9 @@ class _AsDocument(object):
     def __init__(self):
         self._cache = dict()
 
-    def __call__(self, mongoengine_object):
-        return Document.from_mongo(mongoengine_object, self._cache)
+    def __call__(self, mongoengine_object, use_newest=False):
+        return Document.from_mongo(mongoengine_object, self._cache,
+                                   use_newest=use_newest)
 
 
 class _AsDocumentRaw(object):
@@ -405,9 +406,10 @@ class _AsDocumentRaw(object):
     def __init__(self):
         self._cache = dict()
 
-    def __call__(self, name, input_dict, dref_fields):
+    def __call__(self, name, input_dict, dref_fields, use_newest):
 
-        return Document.from_dict(name, input_dict, dref_fields, self._cache)
+        return Document.from_dict(name, input_dict, dref_fields, self._cache,
+                                  use_newest=use_newest)
 
 
 def _format_time(search_dict):
@@ -545,8 +547,7 @@ def _get_mongo_document(document, document_cls):
 
 
 def _dereference_uid_fields(correction_document):
-    uid_field_name_map = {'descriptor': Correction,
-                          'run_start': Correction,
+    uid_field_name_map = {'run_start': Correction,
                           'beamline_config': BeamlineConfig}
     _as_document = _AsDocument()
     for k, v in six.iteritems(correction_document._data):
@@ -554,19 +555,18 @@ def _dereference_uid_fields(correction_document):
             v = v.uid
         if k in uid_field_name_map:
             mds_cls = uid_field_name_map[k]
-            # assume it is the uid for a document in another collection
-            correction = mds_cls.objects(__raw__={'uid': v}).order_by('-id')
-            if not len(correction):
-                # see if the uid is pointing to a single correction document
-                correction = mds_cls.objects(
-                    __raw__={'correction_uid': v}).order_by('-id')
-                if not len(correction):
-                    raise ValueError(
-                        "No documents were found in the %s collection for uid "
-                        "%s" % (str(mds_cls), v))
-                correction = correction[0]
-            else:
-                correction = correction[0]
+            correction = mds_cls.objects(__raw__={'uid': v}).order_by('-id')[0]
+            # if not len(correction):
+            #     # see if the uid is pointing to a single correction document
+            #     correction = mds_cls.objects(
+            #         __raw__={'correction_uid': v}).order_by('-id')
+            #     if not len(correction):
+            #         raise ValueError(
+            #             "No documents were found in the %s collection for uid "
+            #             "%s" % (str(mds_cls), v))
+            #     correction = correction[0]
+            # else:
+            #     correction = correction[0]
             # correction = _as_document(correction)
             correction = _dereference_uid_fields(correction)
             setattr(correction_document, k, correction)
@@ -632,32 +632,8 @@ def _find_corrections_helper(newest_only=True, dereference_uids=True, **kwargs):
     if dereference_uids:
         corrections = [_dereference_uid_fields(correction) for correction in
                        corrections]
-    else:
-        corrections = [c for c in corrections]
+    print('corrections: {}'.format(corrections))
     return corrections
-
-
-def _find_updated_documents(document):
-    """Helper function to find updated documents in a document list
-
-    This helper function makes the assumption that, if you are calling it,
-    you only care about getting the latest documents, this API does not
-    support matching up a specific combination of RunStart, EventDescriptor,
-    RunStop documents, etc.
-
-    Parameters
-    ----------
-    document : mongoengine.Document
-        A documents to find an update for
-    """
-    # search for mongo documents with the find_corrections_helper
-    correction = _find_corrections_helper(uid=document.uid)
-    # if there are no corrections, return the input document
-    if correction:
-        # only grab the newest correction
-        return correction[0]
-    # if there are no corrections, return the original
-    return document
 
 
 def _find_documents(DocumentClass, **kwargs):
@@ -672,8 +648,8 @@ def _find_documents(DocumentClass, **kwargs):
 
     Returns
     -------
-    as_document : generator
-        Generator of mongoengine objects laundered through a safety net
+    as_document : list
+        List of mongoengine objects
     """
     _normalize_object_id(kwargs, '_id')
     _format_time(kwargs)
@@ -681,12 +657,21 @@ def _find_documents(DocumentClass, **kwargs):
         # ordering by '-_id' sorts by newest first
         search_results = DocumentClass.objects(__raw__=kwargs).order_by('-id')
         if kwargs.pop('use_newest_correction', None):
+            print('search_results: {}'.format(search_results))
             print("searching for newer documents")
-            search_results = [_find_updated_documents(res) for res in
-                              search_results]
+            search_results = [_find_corrections_helper(newest_only=True,
+                                                       uid=res.uid)[0]
+                              for res in search_results]
+        print('search_results: {}'.format(search_results))
+        return search_results
 
-        _as_document = _AsDocument()
-        return (_as_document(document) for document in search_results)
+def _get_uid(document):
+    try:
+        return document.uid
+    except AttributeError:
+        # the document is either a string or None. It does not matter which
+        # at this point
+        return document
 
 
 @_ensure_connection
@@ -743,9 +728,12 @@ def find_run_starts(use_newest_correction=True, **kwargs):
     ...                stop_time=time.time())
 
     """
-    return _find_documents(RunStart,
-                           use_newest_correction=use_newest_correction,
-                           **kwargs)
+    _as_document = _AsDocument()
+    # lazily turn the mongo objects into safe objects via generator
+    run_starts = _find_documents(
+        RunStart, use_newest_correction=use_newest_correction, **kwargs)
+    print(run_starts)
+    return (_as_document(doc) for doc in run_starts)
 
 
 @_ensure_connection
@@ -775,7 +763,10 @@ def find_beamline_configs(**kwargs):
     -------
     beamline_configs : iterable of metadatastore.document.Document objects
     """
-    return _find_documents(BeamlineConfig, **kwargs)
+    _as_document = _AsDocument()
+    # lazily turn the mongo objects into safe objects via generator
+    return (_as_document(doc) for doc in _find_documents(BeamlineConfig,
+                                                         **kwargs))
 
 
 @_ensure_connection
@@ -815,23 +806,16 @@ def find_run_stops(run_start=None, use_newest_correction=True, **kwargs):
     -------
     run_stop : iterable of metadatastore.document.Document objects
     """
+    run_start_uid = _get_uid(run_start)
     if run_start:
-        kwargs['run_start_id'] = _format_run_start(run_start,
-                                                   use_newest_correction)
-    _normalize_object_id(kwargs, 'run_start_id')
-    print("kwargs: {}".format(kwargs))
-    return _find_documents(RunStop,
-                           use_newest_correction=use_newest_correction,
-                           **kwargs)
+        mongo_run_start = _find_documents(RunStart, uid=run_start_uid)[0]
+        kwargs['run_start_id'] = mongo_run_start.id
 
-def _format_run_start(run_start, use_newest_correction):
-    if use_newest_correction:
-        if isinstance(run_start, Document):
-            run_start = run_start.uid
-        run_start, = find_corrections(uid=run_start, newest_only=True)
-    mongo_document = _get_mongo_document(run_start, RunStart)
-    print(vars(mongo_document))
-    return mongo_document
+    _normalize_object_id(kwargs, 'run_start_id')
+    _as_document = _AsDocument()
+    # lazily turn the mongo objects into safe objects via generator
+    return (_as_document(doc, use_newest_correction) for doc in
+            _find_documents(RunStop, **kwargs))
 
 
 @_ensure_connection
@@ -849,6 +833,7 @@ def find_event_descriptors(run_start=None, use_newest_correction=True,
             Globally unique id string provided to metadatastore for the
             RunStart Document.
     use_newest_correction : bool
+
     start_time : time-like, optional
         time-like representation of the earliest time that an EventDescriptor
         was created. Valid options are:
@@ -872,19 +857,23 @@ def find_event_descriptors(run_start=None, use_newest_correction=True,
     """
     _format_time(kwargs)
     # get the actual mongo document
-    if run_start:
-        kwargs['run_start_id'] = _format_run_start(run_start,
-                                                   use_newest_correction)
+    run_start_uid = _get_uid(run_start)
+    if run_start_uid:
+        mongo_run_start = _find_documents(RunStart, uid=run_start_uid)[0]
+        kwargs['run_start_id'] = mongo_run_start.id
 
     _normalize_object_id(kwargs, '_id')
     _normalize_object_id(kwargs, 'run_start_id')
-    return _find_documents(EventDescriptor,
-                           use_newest_correction=use_newest_correction,
-                           **kwargs)
+    _as_document = _AsDocument()
+    mongo_descriptors = _find_documents(
+        EventDescriptor, use_newest_correction=use_newest_correction, **kwargs)
+    print(mongo_descriptors)
+    return (_as_document(doc, use_newest_correction) for doc
+            in mongo_descriptors)
 
 
 @_ensure_connection
-def find_events(descriptor=None, **kwargs):
+def find_events(descriptor=None, use_newest_descriptor=True, **kwargs):
     """Given search criteria, locate Event Documents.
 
     Parameters
@@ -925,9 +914,12 @@ def find_events(descriptor=None, **kwargs):
 
     _format_time(kwargs)
     # get the actual mongo document
-    if descriptor:
-        descriptor = _get_mongo_document(descriptor, EventDescriptor)
-        kwargs['descriptor_id'] = descriptor.id
+    descriptor_uid = _get_uid(descriptor)
+    if descriptor_uid:
+        # then we are clearly searching for one "set" of events
+        mongo_descriptor = _find_documents(EventDescriptor,
+                                           uid=descriptor_uid)[0]
+        kwargs['descriptor_id'] = mongo_descriptor.id
 
     _normalize_object_id(kwargs, '_id')
     _normalize_object_id(kwargs, 'descriptor_id')
@@ -941,12 +933,13 @@ def find_events(descriptor=None, **kwargs):
             dref_dict[lookup_name] = f
 
     _as_document = _AsDocumentRaw()
-    return (reorganize_event(_as_document(name, ev, dref_dict))
+    return (reorganize_event(_as_document(name, ev, dref_dict,
+                                          use_newest_descriptor))
             for ev in events)
 
 
 @_ensure_connection
-def find_last(num=1):
+def find_last(num=1, use_newest=True):
     """Locate the last `num` RunStart Documents
 
     Parameters
@@ -963,7 +956,7 @@ def find_last(num=1):
     for rs in RunStart.objects.order_by('-time'):
         if next(c) == num:
             raise StopIteration
-        yield _as_document(rs)
+        yield _as_document(rs, use_newest)
 
 
 def _todatetime(time_stamp):

@@ -13,7 +13,6 @@ import humanize
 from six.moves import reduce
 import numpy as np
 
-
 __all__ = ['Document']
 
 
@@ -99,7 +98,8 @@ class Document(MutableMapping):
         return key in self._fields
 
     @classmethod
-    def from_mongo(cls, mongo_document, cache=None, document_name=None):
+    def from_mongo(cls, mongo_document, cache=None, document_name=None,
+                   use_newest=True):
         """
         Copy the data out of a mongoengine.Document, including nested
         Documents, but do not copy any of the mongo-specific methods or
@@ -114,6 +114,13 @@ class Document(MutableMapping):
         document_name : str, optional
             The name for the document (i.e., name='Run Start')
             if none, document_name = mongo_document.__class__.__name__
+        use_newest : bool
+            Use the newest correction documents
+
+        Returns
+        -------
+        doc : Document
+            The result as a mds Document
         """
         if cache is None:
             cache = dict()
@@ -155,7 +162,8 @@ class Document(MutableMapping):
         return document
 
     @classmethod
-    def from_dict(cls, name, input_dict, dref_fields=None, cache=None):
+    def from_dict(cls, name, input_dict, dref_fields=None, cache=None,
+                  use_newest=True):
         """Document from dictionary
 
         Turn a dictionary into a MDS Document, de-referencing
@@ -165,16 +173,15 @@ class Document(MutableMapping):
         ----------
         name : str
             The class name to assign to the result object
-
         input_dict : dict
             Raw pymongo document
-
         dref_fields : dict, optional
             Dictionary keyed on field name mapping to the ReferenceField object
             to use to de-reference the field.
-
         cache : dict
             Cache dictionary
+        use_newest : bool
+            Use the newest correction documents
 
         Returns
         -------
@@ -201,7 +208,8 @@ class Document(MutableMapping):
 
                     ref_obj = ref_klass.document_type_obj
 
-                    ref_doc = cls.from_mongo(ref_obj.objects.get(id=v))
+                    ref_doc = cls.from_mongo(ref_obj.objects.get(id=v),
+                                             use_newest=True)
 
                     cache[v] = ref_doc
                     document[new_key] = ref_doc

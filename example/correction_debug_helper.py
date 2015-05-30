@@ -13,6 +13,9 @@ if __name__ == "__main__":
     descriptor_2, = find_event_descriptors(uid=descriptor2_uid)
     run_stop, = find_run_stops(uid=run_stop_uid)
 
+    events = find_events(descriptor=descriptor1_uid)
+
+    print(next(events))
     descriptor_1_update = update(descriptor_1)
     print(descriptor_1_update)
 

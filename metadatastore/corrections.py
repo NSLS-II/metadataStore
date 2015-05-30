@@ -30,7 +30,7 @@ from .odm_templates import (RunStart, EventDescriptor, BeamlineConfig,
 
 def _replace_embedded_document(event_descriptor):
     new_data_keys = {}
-    for k, v in six.iteritems(event_descriptor.data_keys):
+    for k, v in event_descriptor.data_keys:
         new_data_keys[k] = {k1: v1 for k1, v1 in six.iteritems(v)}
     return new_data_keys
 
@@ -77,7 +77,7 @@ def update(mds_document, correction_uid=None):
     # have to look for Embedded Documents and turn them into straight
     # dictionaries
     if mds_document._name == "EventDescriptor":
-        mds_document.data_keys = _replace_embedded_document(mds_document)
+        mds_document = _replace_embedded_document(mds_document)
 
     for k, v in six.iteritems(mds_document):
         if k in fields_to_skip:
