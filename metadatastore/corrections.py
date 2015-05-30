@@ -30,7 +30,7 @@ from .odm_templates import (RunStart, EventDescriptor, BeamlineConfig,
 
 def _replace_embedded_document(event_descriptor):
     new_data_keys = {}
-    for k, v in event_descriptor.data_keys:
+    for k, v in six.iteritems(event_descriptor.data_keys):
         new_data_keys[k] = {k1: v1 for k1, v1 in six.iteritems(v)}
     return new_data_keys
 

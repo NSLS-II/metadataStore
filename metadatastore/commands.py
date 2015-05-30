@@ -635,6 +635,27 @@ def _find_corrections_helper(newest_only=True, dereference_uids=True, **kwargs):
     print('corrections: {}'.format(corrections))
     return corrections
 
+from itertools import chain
+from bson.dbref import DBRef
+
+def _dereference_reference_fields(mongo_document):
+
+    fields = set(chain(mongo_document._fields.keys(),
+                       mongo_document._data.keys()))
+
+    for field in fields:
+        attr = getattr(mongo_document, field)
+        attr_type = type(attr)
+        if isinstance(attr, mongoengine.document.Document):
+            attr = getattr(mongo_document, field)
+            # see if there is a correction
+            corrected = _find_corrections_helper(uid=attr.uid)
+            if corrected:
+                corrected = _dereference_reference_fields(corrected[0])
+                setattr(mongo_document, field, corrected)
+
+    return mongo_document
+
 
 def _find_documents(DocumentClass, **kwargs):
     """Helper function to extract copy/paste code from find_* functions
@@ -655,13 +676,24 @@ def _find_documents(DocumentClass, **kwargs):
     _format_time(kwargs)
     with no_dereference(DocumentClass) as DocumentClass:
         # ordering by '-_id' sorts by newest first
+        use_newest_correction = kwargs.pop('use_newest_correction', None)
         search_results = DocumentClass.objects(__raw__=kwargs).order_by('-id')
-        if kwargs.pop('use_newest_correction', None):
+        if use_newest_correction:
             print('search_results: {}'.format(search_results))
             print("searching for newer documents")
-            search_results = [_find_corrections_helper(newest_only=True,
-                                                       uid=res.uid)[0]
-                              for res in search_results]
+            corrected_results = []
+            for res in search_results:
+                corrected = _find_corrections_helper(newest_only=True,
+                                                     uid=res.uid)
+                if corrected:
+                    res = corrected[0]
+                corrected_results.append(res)
+            # now recursively dereference ReferenceFields
+            dereferenced_results = []
+            for res in corrected_results:
+                res = _dereference_reference_fields(res)
+                dereferenced_results.append(res)
+            search_results = dereferenced_results
         print('search_results: {}'.format(search_results))
         return search_results
 
@@ -812,10 +844,12 @@ def find_run_stops(run_start=None, use_newest_correction=True, **kwargs):
         kwargs['run_start_id'] = mongo_run_start.id
 
     _normalize_object_id(kwargs, 'run_start_id')
+    run_stop_documents = _find_documents(
+        RunStop, use_newest_correction=use_newest_correction, **kwargs)
+        # RunStop, **kwargs)
     _as_document = _AsDocument()
     # lazily turn the mongo objects into safe objects via generator
-    return (_as_document(doc, use_newest_correction) for doc in
-            _find_documents(RunStop, **kwargs))
+    return (_as_document(doc) for doc in run_stop_documents)
 
 
 @_ensure_connection

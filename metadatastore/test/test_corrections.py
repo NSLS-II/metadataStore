@@ -127,13 +127,38 @@ def test_update_run_stop():
                                                'published', True)
     _update_document_helper(find_run_stops, "RunStop", doc1, doc2, doc3)
 
+    original_run_start, = find_run_starts(uid=run_start_uid,
+                                          use_newest_correction=False)
+    # ensure there is an updated run start document in the Corrections
+    # collection
+    update(original_run_start)
+    newest_run_start, = find_run_starts(uid=run_start_uid,
+                                        use_newest_correction=True)
 
-def test_update_event_descriptor():
-    for desc_uid in [descriptor1_uid, descriptor2_uid]:
-        doc1, doc2, doc3 = _insert_document_helper(
-            find_event_descriptors, desc_uid, 'published', True)
-        _update_document_helper(find_event_descriptors, "EventDescriptor",
-                                doc1, doc2, doc3)
+    newest_run_stop, = find_run_stops(uid=run_stop_uid,
+                                      use_newest_correction=True)
+    original_run_stop, = find_run_stops(uid=run_stop_uid,
+                                        use_newest_correction=False)
+
+    # Make sure that the newest_run_stop is a correction and that its
+    # run_start is also a correction and that their uid's are equivalent
+    assert_equal(newest_run_stop.run_start.correction_uid,
+                 newest_run_start.correction_uid)
+    # Make sure that the original run stop can still be found with the
+    # `use_newest_correction` flag and that its run_start is also a raw document
+    assert_equal(original_run_start.uid, original_run_stop.run_start.uid)
+    for doc in [original_run_start, original_run_stop]:
+        try:
+            doc.correction_uid
+            raise Exception("The original document should not be a "
+                            "`Correction` document. And yet it is. Puzzling. "
+                            "document = {}".format(doc))
+        except AttributeError:
+            # proper behavior
+            pass
+
+    # Make sure that the new run stop's uid is still the same as the original
+    assert_equal(newest_run_stop.uid, original_run_stop.uid)
 
 
 def test_replace_embedded_document():
