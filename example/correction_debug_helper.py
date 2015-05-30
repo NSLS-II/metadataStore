@@ -37,14 +37,16 @@ if __name__ == "__main__":
     ev0 = next(events)
     print(ev0)
 
-    # update the event descriptor and search again
+    # update the run start and grab the new event descriptor
+    run_start1, = find_run_starts(uid=run_start1_uid)
+    run_start1.bad = True
+    update(run_start1)
+    print(run_start1)
     descriptor, = find_event_descriptors(uid=descriptor1_uid)
-    descriptor.bad = True
-    update(descriptor)
 
     print(descriptor)
 
-    events = find_events(descriptor=descriptor1_uid)
+    events = find_events(descriptor=descriptor)
     ev0 = next(events)
     print("The next event should have a Corrected EventDescriptor")
     print(ev0)

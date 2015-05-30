@@ -103,6 +103,11 @@ def update(mds_document, correction_uid=None):
     if mds_document._name == "Correction":
         original_document_type = mds_document.original_document_type
         setattr(c, 'original_document_type', original_document_type)
+        parent_uid = mds_document.correction_uid
+    else:
+        parent_uid = mds_document.uid
+
+    setattr(c, 'parent_uid', parent_uid)
     c.save(validate=True, write_concern={"w": 1})
 
     documentized = _AsDocument()(_dereference_uid_fields(c))
