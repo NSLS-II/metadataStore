@@ -18,18 +18,28 @@ if __name__ == "__main__":
     print("run stop from run_start_uid %s" % run_start_uid)
     print(run_stop)
     descriptor_1, = find_event_descriptors(uid=descriptor1_uid)
+    print("Descriptor 1")
+    print(descriptor_1)
     descriptor_2, = find_event_descriptors(uid=descriptor2_uid)
+    print("Descriptor 2")
+    print(descriptor_2)
 
-    events = find_events(descriptor=descriptor1_uid)
+    update(descriptor_1)
 
-    print(next(events))
-    descriptor_1_update = update(descriptor_1)
-    print(descriptor_1_update)
-
-    run_start.foo = "bar"
-    run_start_update = update(run_start)
-
-    print(run_start_update)
-
-    descriptor_1_find = find_event_descriptors(run_start=run_start_update)
-    print(next(descriptor_1_find))
+    events = find_events(descriptor=descriptor_1)
+    ev0 = next(events)
+    print("Event 0")
+    print(ev0)
+    # events = find_events(descriptor=descriptor1_uid)
+    #
+    # print(next(events))
+    # descriptor_1_update = update(descriptor_1)
+    # print(descriptor_1_update)
+    #
+    # run_start.foo = "bar"
+    # run_start_update = update(run_start)
+    #
+    # print(run_start_update)
+    #
+    # descriptor_1_find = find_event_descriptors(run_start=run_start_update)
+    # print(next(descriptor_1_find))

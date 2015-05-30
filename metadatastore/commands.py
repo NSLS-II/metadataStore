@@ -15,6 +15,7 @@ from mongoengine.context_managers import no_dereference
 import datetime
 import pytz
 from collections import Mapping
+from itertools import chain
 
 import uuid
 from bson import ObjectId
@@ -394,9 +395,8 @@ class _AsDocument(object):
     def __init__(self):
         self._cache = dict()
 
-    def __call__(self, mongoengine_object, use_newest=False):
-        return Document.from_mongo(mongoengine_object, self._cache,
-                                   use_newest=use_newest)
+    def __call__(self, mongoengine_object):
+        return Document.from_mongo(mongoengine_object, self._cache)
 
 
 class _AsDocumentRaw(object):
@@ -406,10 +406,9 @@ class _AsDocumentRaw(object):
     def __init__(self):
         self._cache = dict()
 
-    def __call__(self, name, input_dict, dref_fields, use_newest):
+    def __call__(self, name, input_dict, dref_fields):
 
-        return Document.from_dict(name, input_dict, dref_fields, self._cache,
-                                  use_newest=use_newest)
+        return Document.from_dict(name, input_dict, dref_fields, self._cache)
 
 
 def _format_time(search_dict):
@@ -635,8 +634,6 @@ def _find_corrections_helper(newest_only=True, dereference_uids=True, **kwargs):
     print('corrections: {}'.format(corrections))
     return corrections
 
-from itertools import chain
-from bson.dbref import DBRef
 
 def _dereference_reference_fields(mongo_document):
 
@@ -678,24 +675,28 @@ def _find_documents(DocumentClass, **kwargs):
         # ordering by '-_id' sorts by newest first
         use_newest_correction = kwargs.pop('use_newest_correction', None)
         search_results = DocumentClass.objects(__raw__=kwargs).order_by('-id')
-        if use_newest_correction:
-            print('search_results: {}'.format(search_results))
-            print("searching for newer documents")
-            corrected_results = []
-            for res in search_results:
-                corrected = _find_corrections_helper(newest_only=True,
-                                                     uid=res.uid)
-                if corrected:
-                    res = corrected[0]
-                corrected_results.append(res)
-            # now recursively dereference ReferenceFields
-            dereferenced_results = []
-            for res in corrected_results:
-                res = _dereference_reference_fields(res)
-                dereferenced_results.append(res)
-            search_results = dereferenced_results
         print('search_results: {}'.format(search_results))
         return search_results
+
+
+def _correct_results(search_results):
+    print('search_results: {}'.format(search_results))
+    print("searching for newer documents")
+    corrected_results = []
+    for res in search_results:
+        corrected = _find_corrections_helper(newest_only=True,
+                                             uid=res.uid)
+        if corrected:
+            res = corrected[0]
+        corrected_results.append(res)
+    # now recursively dereference ReferenceFields
+    dereferenced_results = []
+    for res in corrected_results:
+        res = _dereference_reference_fields(res)
+        dereferenced_results.append(res)
+    search_results = dereferenced_results
+    return search_results
+
 
 def _get_uid(document):
     try:
@@ -761,11 +762,11 @@ def find_run_starts(use_newest_correction=True, **kwargs):
 
     """
     _as_document = _AsDocument()
+    mongo_run_starts = _find_documents(RunStart, **kwargs)
+    if use_newest_correction:
+        mongo_run_starts = _correct_results(mongo_run_starts)
     # lazily turn the mongo objects into safe objects via generator
-    run_starts = _find_documents(
-        RunStart, use_newest_correction=use_newest_correction, **kwargs)
-    print(run_starts)
-    return (_as_document(doc) for doc in run_starts)
+    return (_as_document(doc) for doc in mongo_run_starts)
 
 
 @_ensure_connection
@@ -844,12 +845,12 @@ def find_run_stops(run_start=None, use_newest_correction=True, **kwargs):
         kwargs['run_start_id'] = mongo_run_start.id
 
     _normalize_object_id(kwargs, 'run_start_id')
-    run_stop_documents = _find_documents(
-        RunStop, use_newest_correction=use_newest_correction, **kwargs)
-        # RunStop, **kwargs)
+    mongo_run_stops = _find_documents(RunStop, **kwargs)
+    if use_newest_correction:
+        mongo_run_stops = _correct_results(mongo_run_stops)
     _as_document = _AsDocument()
     # lazily turn the mongo objects into safe objects via generator
-    return (_as_document(doc) for doc in run_stop_documents)
+    return (_as_document(doc) for doc in mongo_run_stops)
 
 
 @_ensure_connection
@@ -899,11 +900,10 @@ def find_event_descriptors(run_start=None, use_newest_correction=True,
     _normalize_object_id(kwargs, '_id')
     _normalize_object_id(kwargs, 'run_start_id')
     _as_document = _AsDocument()
-    mongo_descriptors = _find_documents(
-        EventDescriptor, use_newest_correction=use_newest_correction, **kwargs)
-    print(mongo_descriptors)
-    return (_as_document(doc, use_newest_correction) for doc
-            in mongo_descriptors)
+    mongo_descriptors = _find_documents(EventDescriptor, **kwargs)
+    if use_newest_correction:
+        mongo_descriptors = _correct_results(mongo_descriptors)
+    return (_as_document(doc) for doc in mongo_descriptors)
 
 
 @_ensure_connection
@@ -967,8 +967,7 @@ def find_events(descriptor=None, use_newest_descriptor=True, **kwargs):
             dref_dict[lookup_name] = f
 
     _as_document = _AsDocumentRaw()
-    return (reorganize_event(_as_document(name, ev, dref_dict,
-                                          use_newest_descriptor))
+    return (reorganize_event(_as_document(name, ev, dref_dict))
             for ev in events)
 
 
@@ -987,10 +986,12 @@ def find_last(num=1, use_newest=True):
     """
     c = count()
     _as_document = _AsDocument()
-    for rs in RunStart.objects.order_by('-time'):
+    mongo_run_starts = RunStart.objects.order_by('-_id')[:num]
+    for rs in mongo_run_starts:
         if next(c) == num:
             raise StopIteration
-        yield _as_document(rs, use_newest)
+        rs = _correct_results([rs])[0]
+        yield _as_document(rs)
 
 
 def _todatetime(time_stamp):

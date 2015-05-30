@@ -74,10 +74,10 @@ def update(mds_document, correction_uid=None):
     # of the correction document
     fields_to_skip = ['uid', 'correction_uid', 'time']
 
-    # have to look for Embedded Documents and turn them into straight
-    # dictionaries
+    # special case the event descriptor because it is the only thing that
+    #  contains an Embedded Document
     if mds_document._name == "EventDescriptor":
-        mds_document = _replace_embedded_document(mds_document)
+        mds_document.data_keys = _replace_embedded_document(mds_document)
 
     for k, v in six.iteritems(mds_document):
         if k in fields_to_skip:
