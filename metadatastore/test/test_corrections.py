@@ -11,7 +11,7 @@ from metadatastore.utils.testing import mds_setup, mds_teardown
 from metadatastore.examples.sample_data import temperature_ramp
 from metadatastore.api import (find_run_starts, find_run_stops,
                                find_event_descriptors, find_beamline_configs,
-                               find_events)
+                               find_events, find_corrections)
 from metadatastore.corrections import update, _replace_embedded_document
 from itertools import product
 import logging
@@ -113,6 +113,7 @@ def _update_document_helper(find_function, document_name, doc1, doc2, doc3):
     assert_equal(doc3.uid, doc5.uid)
     return doc4, doc5
 
+
 def test_update_run_start():
     doc1, doc2, doc3 = _insert_document_helper(
         find_run_starts, run_start_uid, 'published', True)
@@ -120,6 +121,7 @@ def test_update_run_start():
         find_run_starts, "RunStart", doc1, doc2, doc3)
 
     # check beamline config updating is working as expected
+
 
 def test_update_run_stop():
     doc1, doc2, doc3 = _insert_document_helper(find_run_stops,
@@ -194,6 +196,21 @@ def test_update_event_descriptor():
         except AttributeError:
             # proper behavior
             pass
+
+
+def test_find_corrections():
+    original_run_start, = find_run_starts(uid=run_start_uid,
+                                          use_newest_correction=False)
+    newest_run_start, = find_run_starts(uid=run_start_uid)
+
+    run_start_corrections = list(find_corrections(uid=run_start_uid))
+    
+    assert_equal(run_start_corrections[0].correction_uid,
+                 newest_run_start.correction_uid)
+    assert_equal(run_start_corrections[0].uid,
+                 original_run_start.uid)
+    assert_equal(run_start_corrections[0].uid,
+                 newest_run_start.uid)
 
 
 
