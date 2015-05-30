@@ -414,9 +414,10 @@ class _AsDocumentRaw(object):
     def __init__(self):
         self._cache = dict()
 
-    def __call__(self, name, input_dict, dref_fields):
+    def __call__(self, name, input_dict, dref_fields, newest):
 
-        return Document.from_dict(name, input_dict, dref_fields, self._cache)
+        return Document.from_dict(name, input_dict, newest, dref_fields,
+                                  self._cache)
 
 
 def _format_time(search_dict):
@@ -560,9 +561,22 @@ def _dereference_uid_fields(correction_document):
     for k, v in six.iteritems(correction_document._data):
         if hasattr(v, 'uid'):
             v = v.uid
+        if isinstance(v, DBRef):
+            continue
         if k in uid_field_name_map:
-            mds_cls = uid_field_name_map[k]
-            correction = mds_cls.objects(__raw__={'uid': v}).order_by('-id')[0]
+            if k == 'run_start':
+                # it could be a Correction or a RunStart. See if it is a
+                # Correction first
+                correction = Correction.objects(
+                    __raw__={'uid': v}).order_by('-id')
+                if len(correction):
+                    correction = correction[0]
+                else:
+                    correction = RunStart.objects(
+                        __raw__={'uid': v}).order_by('-id')[0]
+            elif k == 'beamline_config':
+                correction = BeamlineConfig.objects(
+                    __raw__={'uid': v}).order_by('-id')[0]
             # if not len(correction):
             #     # see if the uid is pointing to a single correction document
             #     correction = mds_cls.objects(
@@ -915,7 +929,7 @@ def find_event_descriptors(run_start=None, newest=True,
 
 
 @_ensure_connection
-def find_events(descriptor=None, use_newest_descriptor=True, **kwargs):
+def find_events(descriptor=None, newest=True, **kwargs):
     """Given search criteria, locate Event Documents.
 
     Parameters
@@ -975,12 +989,12 @@ def find_events(descriptor=None, use_newest_descriptor=True, **kwargs):
             dref_dict[lookup_name] = f
 
     _as_document = _AsDocumentRaw()
-    return (reorganize_event(_as_document(name, ev, dref_dict))
+    return (reorganize_event(_as_document(name, ev, dref_dict, newest))
             for ev in events)
 
 
 @_ensure_connection
-def find_last(num=1, use_newest=True):
+def find_last(num=1, newest=True):
     """Locate the last `num` RunStart Documents
 
     Parameters
@@ -1076,7 +1090,7 @@ class Document(MutableMapping):
 
     @classmethod
     def from_mongo(cls, mongo_document, cache=None, document_name=None,
-                   use_newest=True):
+                   newest=True):
         """
         Copy the data out of a mongoengine.Document, including nested
         Documents, but do not copy any of the mongo-specific methods or
@@ -1091,7 +1105,7 @@ class Document(MutableMapping):
         document_name : str, optional
             The name for the document (i.e., name='Run Start')
             if none, document_name = mongo_document.__class__.__name__
-        use_newest : bool
+        newest : bool
             Use the newest correction documents
 
         Returns
@@ -1139,8 +1153,7 @@ class Document(MutableMapping):
         return document
 
     @classmethod
-    def from_dict(cls, name, input_dict, dref_fields=None, cache=None,
-                  use_newest=True):
+    def from_dict(cls, name, input_dict, newest, dref_fields=None, cache=None):
         """Document from dictionary
 
         Turn a dictionary into a MDS Document, de-referencing
@@ -1157,7 +1170,7 @@ class Document(MutableMapping):
             to use to de-reference the field.
         cache : dict
             Cache dictionary
-        use_newest : bool
+        newest : bool
             Use the newest correction documents
 
         Returns
@@ -1184,9 +1197,14 @@ class Document(MutableMapping):
                 except KeyError:
 
                     ref_obj = ref_klass.document_type_obj
-                    #todo grab the updated event descriptor here
+                    # this search is basically free
                     ref_doc = cls.from_mongo(ref_obj.objects.get(id=v),
-                                             use_newest=True)
+                                             newest=True)
+                    if newest:
+                        new_doc = _find_corrections_helper(
+                            newest, dereference_uids=True, uid=ref_doc.uid)
+                        if new_doc:
+                            ref_doc = _AsDocument()(new_doc[0])
 
                     cache[v] = ref_doc
                     document[new_key] = ref_doc

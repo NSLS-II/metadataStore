@@ -6,7 +6,7 @@ import datetime
 
 import pytz
 from nose.tools import (assert_equal, assert_raises, raises,
-                        assert_not_equal, assert_in)
+                        assert_not_equal, assert_in, assert_not_in)
 import metadatastore.commands as mdsc
 from metadatastore.utils.testing import mds_setup, mds_teardown
 from metadatastore.examples.sample_data import temperature_ramp
@@ -245,6 +245,27 @@ def test_update_identical_document():
 def test_replace_embedded_document():
     descriptor1, = find_event_descriptors(uid=descriptor1_uid)
     assert(isinstance(descriptor1.data_keys, dict))
+
+def test_event_dereferencing():
+    events = find_events(descriptor=descriptor1_uid)
+    ev0 = next(events)
+    ev_desc = ev0.descriptor
+    assert_equal(ev_desc.uid, descriptor1_uid)
+    # update the event descriptor and search again
+    descriptor, = find_event_descriptors(uid=descriptor1_uid)
+    descriptor.bad = True
+    update(descriptor)
+
+    events = find_events(descriptor=descriptor1_uid)
+    ev0 = next(events)
+    ev_desc = ev0.descriptor
+    assert_not_equal(ev_desc.uid, descriptor.correction_uid)
+
+    events = find_events(descriptor=descriptor1_uid, newest=False)
+    ev0 = next(events)
+    ev_desc = ev0.descriptor
+    assert_not_in('Correction', ev_desc._name)
+    assert_equal(ev0.descriptor.uid, descriptor.uid)
 
 
 @raises(ValueError)
