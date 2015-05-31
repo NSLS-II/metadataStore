@@ -801,6 +801,29 @@ def find_events(descriptor=None, **kwargs):
 
 
 @_ensure_connection
+def count_events(**kwargs):
+    """Like find_events, but it returns the count, not the actual Events.
+
+    This function is likely to be deprecated in this near future. Instead,
+    find_events will return an iterator that has a length.
+    """
+    # Some user-friendly error messages for an easy mistake to make
+    if 'event_descriptor' in kwargs:
+        raise ValueError("Use 'descriptor', not 'event_descriptor'.")
+    if 'event_descriptor_id' in kwargs:
+        raise ValueError("Use 'descriptor_id', not 'event_descriptor_id'.")
+
+    _format_time(kwargs)
+    try:
+        kwargs['descriptor_id'] = kwargs.pop('descriptor').id
+    except KeyError:
+        pass
+    _normalize_object_id(kwargs, '_id')
+    _normalize_object_id(kwargs, 'descriptor_id')
+    return len(Event.objects(__raw__=kwargs))
+
+
+@_ensure_connection
 def find_last(num=1):
     """Locate the last `num` RunStart Documents
 
