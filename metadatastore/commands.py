@@ -18,15 +18,12 @@ from mongoengine.base.datastructures import BaseDict, BaseList
 from mongoengine.base.document import BaseDocument
 from bson.objectid import ObjectId
 from bson.dbref import DBRef
-from prettytable import PrettyTable
-import humanize
-import numpy as np
-
 from .odm_templates import (RunStart, BeamlineConfig, RunStop,
                             EventDescriptor, Event, DataKey, ALIAS, Correction)
 from metadatastore import conf
 from mongoengine import connect,  ReferenceField
-from six.moves import reduce
+
+from .document import Document
 
 logger = logging.getLogger(__name__)
 
@@ -553,46 +550,8 @@ def _get_mongo_document(document, document_cls):
     mongo_document = document_cls.objects(__raw__={'uid': document})[0]
     return mongo_document
 
-
-def _dereference_uid_fields(correction_document):
-    uid_field_name_map = {'run_start': Correction,
-                          'beamline_config': BeamlineConfig}
-    _as_document = _AsDocument()
-    for k, v in six.iteritems(correction_document._data):
-        if hasattr(v, 'uid'):
-            v = v.uid
-        if isinstance(v, DBRef):
-            continue
-        if k in uid_field_name_map:
-            if k == 'run_start':
-                # it could be a Correction or a RunStart. See if it is a
-                # Correction first
-                correction = Correction.objects(
-                    __raw__={'uid': v}).order_by('-id')
-                if len(correction):
-                    correction = correction[0]
-                else:
-                    correction = RunStart.objects(
-                        __raw__={'uid': v}).order_by('-id')[0]
-            elif k == 'beamline_config':
-                correction = BeamlineConfig.objects(
-                    __raw__={'uid': v}).order_by('-id')[0]
-            # if not len(correction):
-            #     # see if the uid is pointing to a single correction document
-            #     correction = mds_cls.objects(
-            #         __raw__={'correction_uid': v}).order_by('-id')
-            #     if not len(correction):
-            #         raise ValueError(
-            #             "No documents were found in the %s collection for uid "
-            #             "%s" % (str(mds_cls), v))
-            #     correction = correction[0]
-            # else:
-            #     correction = correction[0]
-            # correction = _as_document(correction)
-            correction = _dereference_uid_fields(correction)
-            setattr(correction_document, k, correction)
-    return correction_document
-
+def _dereference_uid_fields():
+    return
 
 @_ensure_connection
 def find_corrections(newest=False, dereference_uids=True, **kwargs):
@@ -622,62 +581,53 @@ def find_corrections(newest=False, dereference_uids=True, **kwargs):
     uid : str, optional
         Globally unique id string provided to metadatastore
     """
-    _as_document = _AsDocument()
-    return (_as_document(c) for c in _find_corrections_helper(
-        newest=newest, dereference_uids=dereference_uids, **kwargs))
-
-
-def _find_corrections_helper(newest=True, dereference_uids=True, **kwargs):
-    """Helper function that does not nuke mongo fields.
-
-    See ``find_corrections`` for relevant kwargs
-
-    Parameters
-    ----------
-    newest : bool, optional
-        True: only return the newest one. Defaults to True
-    for all other kwargs, see ``find_corrections`` docstring
-
-    Returns
-    -------
-    corrections : list
-        List of mongo objects with uid fields dereferenced
-    """
     _normalize_object_id(kwargs, '_id')
     _format_time(kwargs)
-    corrections = Correction.objects(__raw__=kwargs).order_by('-id')
-    if not corrections:
-        return []
-    if newest:
-        corrections = [corrections[0]]
-    if dereference_uids:
-        corrections = [_dereference_uid_fields(correction) for correction in
-                       corrections]
-    print('corrections: {}'.format(corrections))
-    return corrections
+    correction_dicts = _find_documents(Correction, **kwargs)
+    for correction_dict in correction_dicts:
+        _dereference_reference_fields(correction_dict, newest=newest)
+        yield correction_dict
 
 
-def _dereference_reference_fields(mongo_document):
+def _dereference_reference_fields(mongo_dict, newest=True):
+    """In-place dereferencing
+    """
+    reference_fields = {'run_start_id': find_run_starts,
+                        'run_start': find_run_starts,
+                        'descriptor_id': find_event_descriptors,
+                        'descriptor': find_event_descriptors,
+                        'beamline_config_id': find_beamline_configs,
+                        'beamline_config': find_beamline_configs}
 
-    fields = set(chain(mongo_document._fields.keys(),
-                       mongo_document._data.keys()))
-
-    for field in fields:
-        attr = getattr(mongo_document, field)
-        attr_type = type(attr)
-        if isinstance(attr, mongoengine.document.Document):
-            attr = getattr(mongo_document, field)
-            # see if there is a correction
-            corrected = _find_corrections_helper(uid=attr.uid)
-            if corrected:
-                corrected = _dereference_reference_fields(corrected[0])
-                setattr(mongo_document, field, corrected)
-
-    return mongo_document
+    for ref, func in six.iteritems(reference_fields):
+        field = mongo_dict.get(ref, None)
+        if field:
+            # then field is either an ObjectId or a uid, or the object model
+            # is borked...
+            if isinstance(field, ObjectId):
+                # find the original document
+                document_generator = func(newest=False, _id=field)
+                document = next(document_generator)
+                if newest:
+                    corrected_document_generator = find_corrections(uid=field)
+                    try:
+                        document = next(corrected_document_generator)
+                    except StopIteration:
+                        pass
+            else:
+                # this field is a uid and can only be a Correction document.
+                corrected_document_generator = find_corrections(uid=field)
+                try:
+                    document = next(corrected_document_generator)
+                except StopIteration:
+                    pass
+            mongo_dict[ref] = document
 
 
 def _find_documents(DocumentClass, **kwargs):
-    """Helper function to extract copy/paste code from find_* functions
+    """Helper function to extract copy/paste code from find_* functions.
+
+    This function does not derefence any fields.
 
     Parameters
     ----------
@@ -689,35 +639,15 @@ def _find_documents(DocumentClass, **kwargs):
     Returns
     -------
     as_document : list
-        List of mongoengine objects
+        List of mongo dictionaries
     """
     _normalize_object_id(kwargs, '_id')
     _format_time(kwargs)
     with no_dereference(DocumentClass) as DocumentClass:
-        # ordering by '-_id' sorts by newest first
-        newest = kwargs.pop('newest', None)
-        search_results = DocumentClass.objects(__raw__=kwargs).order_by('-id')
-        print('search_results: {}'.format(search_results))
-        return search_results
-
-
-def _correct_results(search_results):
-    print('search_results: {}'.format(search_results))
-    print("searching for newer documents")
-    corrected_results = []
-    for res in search_results:
-        corrected = _find_corrections_helper(newest=True,
-                                             uid=res.uid)
-        if corrected:
-            res = corrected[0]
-        corrected_results.append(res)
-    # now recursively dereference ReferenceFields
-    dereferenced_results = []
-    for res in corrected_results:
-        res = _dereference_reference_fields(res)
-        dereferenced_results.append(res)
-    search_results = dereferenced_results
-    return search_results
+        docs = DocumentClass.objects(__raw__=kwargs).order_by('-_id')
+        docs = docs.as_pymongo()
+        for doc in docs:
+            yield doc
 
 
 def _get_uid(document):
@@ -783,16 +713,22 @@ def find_run_starts(newest=True, **kwargs):
     ...                stop_time=time.time())
 
     """
-    _as_document = _AsDocument()
-    mongo_run_starts = _find_documents(RunStart, **kwargs)
-    if newest:
-        mongo_run_starts = _correct_results(mongo_run_starts)
-    # lazily turn the mongo objects into safe objects via generator
-    return (_as_document(doc) for doc in mongo_run_starts)
+    mongo_run_start_dicts = _find_documents(RunStart, **kwargs)
+    for rs_dict in mongo_run_start_dicts:
+        if newest:
+            corrected_run_start_dicts = find_corrections(uid=rs_dict['uid'])
+            try:
+                rs_dict = next(corrected_run_start_dicts)
+            except StopIteration:
+                pass
+        # in-place dereference the fields
+        _dereference_reference_fields(rs_dict, newest)
+        # lazily turn the mongo objects into safe objects via generator
+        yield Document(rs_dict, "RunStart")
 
 
 @_ensure_connection
-def find_beamline_configs(**kwargs):
+def find_beamline_configs(newest=False, **kwargs):
     """Given search criteria, locate BeamlineConfig Documents.
 
     Parameters
@@ -818,10 +754,17 @@ def find_beamline_configs(**kwargs):
     -------
     beamline_configs : iterable of metadatastore.document.Document objects
     """
-    _as_document = _AsDocument()
-    # lazily turn the mongo objects into safe objects via generator
-    return (_as_document(doc) for doc in _find_documents(BeamlineConfig,
-                                                         **kwargs))
+    if newest:
+        raise ValueError("We currently do not support corrections on "
+                         "BeamlineConfig documents. Call this function with "
+                         "'newest=False'")
+    mongo_beamline_config_dicts = _find_documents(BeamlineConfig,
+                                                           **kwargs)
+    for rs_dict in mongo_beamline_config_dicts:
+        # in-place dereference the fields
+        _dereference_reference_fields(rs_dict, newest=False)
+        # lazily turn the mongo objects into safe objects via generator
+        yield Document(rs_dict, "BeamlineConfig")
 
 
 @_ensure_connection
@@ -861,18 +804,26 @@ def find_run_stops(run_start=None, newest=True, **kwargs):
     -------
     run_stop : iterable of metadatastore.document.Document objects
     """
-    run_start_uid = _get_uid(run_start)
     if run_start:
-        mongo_run_start = _find_documents(RunStart, uid=run_start_uid)[0]
-        kwargs['run_start_id'] = mongo_run_start.id
+        run_start_uid = _get_uid(run_start)
+        mongo_run_start = _find_documents(RunStart, uid=run_start_uid)
+        mongo_run_start = next(mongo_run_start)
+        kwargs['run_start_id'] = mongo_run_start['_id']
 
     _normalize_object_id(kwargs, 'run_start_id')
+
     mongo_run_stops = _find_documents(RunStop, **kwargs)
-    if newest:
-        mongo_run_stops = _correct_results(mongo_run_stops)
-    _as_document = _AsDocument()
-    # lazily turn the mongo objects into safe objects via generator
-    return (_as_document(doc) for doc in mongo_run_stops)
+    for rs_dict in mongo_run_stops:
+        if newest:
+            corrected_run_stop_dicts = find_corrections(uid=rs_dict['uid'])
+            try:
+                rs_dict = next(corrected_run_stop_dicts)
+            except StopIteration:
+                pass
+        # in-place dereference the fields
+        _dereference_reference_fields(rs_dict, newest)
+        # lazily turn the mongo objects into safe objects via generator
+        yield Document(rs_dict, "RunStop")
 
 
 @_ensure_connection
@@ -912,20 +863,27 @@ def find_event_descriptors(run_start=None, newest=True,
     -------
     event_descriptor : iterable of metadatastore.document.Document objects
     """
-    _format_time(kwargs)
-    # get the actual mongo document
-    run_start_uid = _get_uid(run_start)
-    if run_start_uid:
-        mongo_run_start = _find_documents(RunStart, uid=run_start_uid)[0]
-        kwargs['run_start_id'] = mongo_run_start.id
+    if run_start:
+        run_start_uid = _get_uid(run_start)
+        mongo_run_start = _find_documents(RunStart, uid=run_start_uid)
+        mongo_run_start = next(mongo_run_start)
+        kwargs['run_start_id'] = mongo_run_start['_id']
 
-    _normalize_object_id(kwargs, '_id')
     _normalize_object_id(kwargs, 'run_start_id')
-    _as_document = _AsDocument()
-    mongo_descriptors = _find_documents(EventDescriptor, **kwargs)
-    if newest:
-        mongo_descriptors = _correct_results(mongo_descriptors)
-    return (_as_document(doc) for doc in mongo_descriptors)
+
+    mongo_event_descriptors = _find_documents(EventDescriptor, **kwargs)
+    for descriptor_dict in mongo_event_descriptors:
+        if newest:
+            corrected_descriptor_dicts = find_corrections(
+                uid=descriptor_dict['uid'])
+            try:
+                descriptor_dict = next(corrected_descriptor_dicts)
+            except StopIteration:
+                pass
+        # in-place dereference the fields
+        _dereference_reference_fields(descriptor_dict, newest)
+        # lazily turn the mongo objects into safe objects via generator
+        yield Document(descriptor_dict, "EventDescriptor")
 
 
 @_ensure_connection
@@ -962,35 +920,22 @@ def find_events(descriptor=None, newest=True, **kwargs):
     -------
     events : iterable of metadatastore.document.Document objects
     """
-    # Some user-friendly error messages for an easy mistake to make
-    if 'event_descriptor' in kwargs:
-        raise ValueError("Use 'descriptor', not 'event_descriptor'.")
-    if 'event_descriptor_id' in kwargs:
-        raise ValueError("Use 'descriptor_id', not 'event_descriptor_id'.")
 
-    _format_time(kwargs)
-    # get the actual mongo document
-    descriptor_uid = _get_uid(descriptor)
-    if descriptor_uid:
-        # then we are clearly searching for one "set" of events
+    if descriptor:
+        descriptor_uid = _get_uid(descriptor)
         mongo_descriptor = _find_documents(EventDescriptor,
-                                           uid=descriptor_uid)[0]
-        kwargs['descriptor_id'] = mongo_descriptor.id
+                                                    uid=descriptor_uid)
+        mongo_descriptor = next(mongo_descriptor)
+        kwargs['descriptor_id'] = mongo_descriptor['_id']
 
-    _normalize_object_id(kwargs, '_id')
     _normalize_object_id(kwargs, 'descriptor_id')
-    events = Event.objects(__raw__=kwargs).order_by('-time')
-    events = events.as_pymongo()
-    dref_dict = dict()
-    name = Event.__name__
-    for n, f in six.iteritems(Event._fields):
-        if isinstance(f, ReferenceField):
-            lookup_name = f.db_field
-            dref_dict[lookup_name] = f
 
-    _as_document = _AsDocumentRaw()
-    return (reorganize_event(_as_document(name, ev, dref_dict, newest))
-            for ev in events)
+    mongo_events = _find_documents(Event, **kwargs)
+    for event_dict in mongo_events:
+        # in-place dereference the fields
+        _dereference_reference_fields(event_dict, newest)
+        # lazily turn the mongo objects into safe objects via generator
+        yield Document(event_dict, "Event")
 
 
 @_ensure_connection
@@ -1006,14 +951,14 @@ def find_last(num=1, newest=True):
     -------
     run_start: iterable of metadatastore.document.Document objects
     """
-    c = count()
-    _as_document = _AsDocument()
-    mongo_run_starts = RunStart.objects.order_by('-_id')[:num]
-    for rs in mongo_run_starts:
-        if next(c) == num:
-            raise StopIteration
-        rs = _correct_results([rs])[0]
-        yield _as_document(rs)
+    with no_dereference(RunStart) as RunStartKlass:
+        mongo_run_starts = RunStartKlass.objects.order_by('-_id')
+        mongo_run_starts = mongo_run_starts.as_pymongo()
+        for c, rs in enumerate(mongo_run_starts):
+            _dereference_reference_fields(rs)
+            yield Document(rs, "RunStart")
+            if c == num-1:
+                break
 
 
 def _todatetime(time_stamp):
@@ -1042,342 +987,3 @@ def reorganize_event(event_document):
     pairs = [((k, v[0]), (k, v[1])) for k, v in six.iteritems(doc.data)]
     doc.data, doc.timestamps = [dict(tuples) for tuples in zip(*pairs)]
     return doc
-
-
-# FIELDS THAT LIVED IN DOCUMENT
-
-class Document(MutableMapping):
-    """A dictionary where d.key is the same as d['key']
-    and attributes/keys beginning with '_' are skipped
-    in iteration."""
-
-    def __init__(self):
-        self._fields = set()
-
-    def __setattr__(self, k, v):
-        self.__dict__[k] = v
-        if not k.startswith('_'):
-            self._fields.add(k)
-        assert hasattr(self, k)
-        assert k in self.__dict__
-
-    def __delattr__(self, k):
-        del self.__dict__[k]
-        if not k.startswith('_'):
-            self._fields.remove(k)
-        assert k not in self._fields
-
-    def __iter__(self):
-        return iter(self._fields)
-
-    def __getitem__(self, key):
-        try:
-            return getattr(self, key)
-        except AttributeError:
-            raise KeyError(key)
-
-    def __delitem__(self, key):
-        delattr(self, key)
-
-    def __setitem__(self, key, val):
-        setattr(self, key, val)
-
-    def __len__(self):
-        return len(self._fields)
-
-    def __contains__(self, key):
-        return key in self._fields
-
-    @classmethod
-    def from_mongo(cls, mongo_document, cache=None, document_name=None,
-                   newest=True):
-        """
-        Copy the data out of a mongoengine.Document, including nested
-        Documents, but do not copy any of the mongo-specific methods or
-        attributes.
-
-        Parameters
-        ----------
-        mongo_document : mongoengine.Document
-        cache : dict-like, optional
-            Cache of already seen objects in the DB so that we do not
-            have to de-reference and build them again.
-        document_name : str, optional
-            The name for the document (i.e., name='Run Start')
-            if none, document_name = mongo_document.__class__.__name__
-        newest : bool
-            Use the newest correction documents
-
-        Returns
-        -------
-        doc : Document
-            The result as a mds Document
-        """
-        if cache is None:
-            cache = dict()
-        document = Document()
-        if document_name is None:
-            document_name = mongo_document.__class__.__name__
-
-        document._name = document_name
-
-        fields = set(chain(mongo_document._fields.keys(),
-                           mongo_document._data.keys()))
-
-        for field in fields:
-            if field == 'id':
-                # we are no longer supporting mongo id's making it out of
-                # metadatastore
-                continue
-            attr = getattr(mongo_document, field)
-            if isinstance(attr, DBRef):
-                oid = attr.id
-                try:
-                    attr = cache[oid]
-                except KeyError:
-                    # do de-reference
-                    mongo_document.select_related()
-                    # grab the attribute again
-                    attr = getattr(mongo_document, field)
-                    # normalize it
-                    attr = _normalize(attr, cache)
-                    # and stash for later use
-                    cache[oid] = attr
-            else:
-                attr = _normalize(attr, cache)
-
-            document[field] = attr
-        # For debugging, add a human-friendly time_as_datetime attribute.
-        if 'time' in document:
-            document.time_as_datetime = datetime.fromtimestamp(document.time)
-        return document
-
-    @classmethod
-    def from_dict(cls, name, input_dict, newest, dref_fields=None, cache=None):
-        """Document from dictionary
-
-        Turn a dictionary into a MDS Document, de-referencing
-        ObjectId fields as required
-
-        Parameters
-        ----------
-        name : str
-            The class name to assign to the result object
-        input_dict : dict
-            Raw pymongo document
-        dref_fields : dict, optional
-            Dictionary keyed on field name mapping to the ReferenceField object
-            to use to de-reference the field.
-        cache : dict
-            Cache dictionary
-        newest : bool
-            Use the newest correction documents
-
-        Returns
-        -------
-        doc : Document
-            The result as a mds Document
-        """
-        if cache is None:
-            cache = {}
-        if dref_fields is None:
-            dref_fields = {}
-
-        document = Document()
-        document._name = name
-        for k, v in six.iteritems(input_dict):
-            if k == '_id':
-                document['id'] = str(v)
-                continue
-            if isinstance(v, ObjectId):
-                ref_klass = dref_fields[k]
-                new_key = ref_klass.name
-                try:
-                    document[new_key] = cache[v]
-                except KeyError:
-
-                    ref_obj = ref_klass.document_type_obj
-                    # this search is basically free
-                    ref_doc = cls.from_mongo(ref_obj.objects.get(id=v),
-                                             newest=True)
-                    if newest:
-                        new_doc = _find_corrections_helper(
-                            newest, dereference_uids=True, uid=ref_doc.uid)
-                        if new_doc:
-                            ref_doc = _AsDocument()(new_doc[0])
-
-                    cache[v] = ref_doc
-                    document[new_key] = ref_doc
-            else:
-                document[k] = v
-        # For debugging, add a human-friendly time_as_datetime attribute.
-        if 'time' in document:
-            document.time_as_datetime = datetime.fromtimestamp(
-                document.time)
-        return document
-
-    def __repr__(self):
-        try:
-            infostr = '. %s' % self.uid
-        except AttributeError:
-            infostr = ''
-        return "<%s Document%s>" % (self._name, infostr)
-
-    def __str__(self):
-        return _str_helper(self)
-
-    def _repr_html_(self):
-        return html_table_repr(self)
-
-
-def _normalize(in_val, cache):
-    """
-    Helper function for cleaning up the mongoegine documents to be safe.
-
-    Converts Mongoengine.Document to mds.Document objects recursively
-
-    Converts:
-
-     -  mongoengine.base.datastructures.BaseDict -> dict
-     -  mongoengine.base.datastructures.BaseList -> list
-     -  ObjectID -> str
-
-    Parameters
-    ----------
-    in_val : object
-        Object to be sanitized
-
-    cache : dict-like
-        Cache of already seen objects in the DB so that we do not
-        have to de-reference and build them again.
-
-    Returns
-    -------
-    ret : object
-        The 'sanitized' object
-
-    """
-    if isinstance(in_val, BaseDocument):
-        return Document.from_mongo(in_val, cache)
-    elif isinstance(in_val, BaseDict):
-        return {_normalize(k, cache): _normalize(v, cache)
-                for k, v in six.iteritems(in_val)}
-    elif isinstance(in_val, BaseList):
-        return [_normalize(v, cache) for v in in_val]
-    elif isinstance(in_val, ObjectId):
-        return str(in_val)
-    return in_val
-
-
-def _format_dict(value, name_width, value_width, name, tabs=0):
-    ret = ''
-    for k, v in six.iteritems(value):
-        if isinstance(v, Mapping):
-            ret += _format_dict(v, name_width, value_width, k, tabs=tabs+1)
-        else:
-            ret += ("\n%s%-{}s: %-{}s".format(
-                name_width, value_width) % ('  '*tabs, k[:16], v))
-    return ret
-
-
-def _format_data_keys_dict(data_keys_dict):
-    fields = reduce(set.union,
-                    (set(v) for v in six.itervalues(data_keys_dict)))
-    fields = sorted(list(fields))
-    table = PrettyTable(["data keys"] + list(fields))
-    table.align["data keys"] = 'l'
-    table.padding_width = 1
-    for data_key, key_dict in sorted(data_keys_dict.items()):
-        row = [data_key]
-        for fld in fields:
-            row.append(key_dict.get(fld, ''))
-        table.add_row(row)
-    return table
-
-
-def html_table_repr(obj):
-    """Organize nested dict-like and list-like objects into HTML tables."""
-    if hasattr(obj, 'items'):
-        output = "<table>"
-        for key, value in sorted(obj.items()):
-            output += "<tr>"
-            output += "<td>{key}</td>".format(key=key)
-            output += ("<td>" + html_table_repr(value) + "</td>")
-            output += "</tr>"
-        output += "</table>"
-    elif (isinstance(obj, collections.Iterable) and
-          not isinstance(obj, six.string_types) and
-          not isinstance(obj, np.ndarray)):
-        output = "<table style='border: none;'>"
-        # Sort list if possible.
-        try:
-            obj = sorted(obj)
-        except TypeError:
-            pass
-        for value in obj:
-            output += "<tr style='border: none;' >"
-            output += "<td style='border: none;'>" + html_table_repr(value)
-            output += "</td></tr>"
-        output += "</table>"
-    elif isinstance(obj, datetime):
-        # '1969-12-31 19:00:00' -> '1969-12-31 19:00:00 (45 years ago)'
-        human_time = humanize.naturaltime(datetime.now() - obj)
-        return str(obj) + '  ({0})'.format(human_time)
-    else:
-        return str(obj)
-    return output
-
-
-def _str_helper(document, name=None, indent=0):
-    """Recursive document walker and formatter
-
-    Parameters
-    ----------
-    name : str, optional
-        Document header name. Defaults to ``self._name``
-    indent : int, optional
-        The indentation level. Defaults to starting at 0 and adding one tab
-        per recursion level
-    """
-    if name is None:
-        name = document._name
-        if name == "Correction":
-            name = document.original_document_type + " -- Correction"
-
-    headings = [
-        # characters recommended as headers by ReST docs
-        '=', '-', '`', ':', '.', "'", '"', '~', '^', '_', '*', '+', '#',
-        # all other valid header characters according to ReST docs
-        '!', '$', '%', '&', '(', ')', ',', '/', ';', '<', '>', '?', '@',
-        '[', '\\', ']', '{', '|', '}'
-    ]
-
-    mapping = collections.OrderedDict(
-        {idx: char for idx, char in enumerate(headings)})
-    ret = "\n%s\n%s" % (name, mapping[indent]*len(name))
-
-    documents = []
-    name_width = 16
-    value_width = 40
-    for name, value in sorted(document.items()):
-        if isinstance(value, Document):
-            documents.append((name, value))
-        elif name == 'event_descriptors':
-            for val in value:
-                documents.append((name, val))
-        elif name == 'data_keys':
-            ret += "\n%s" % _format_data_keys_dict(value).__str__()
-        elif isinstance(value, Mapping):
-            # format dicts reasonably
-            ret += "\n%-{}s:".format(name_width, value_width) % (name)
-            ret += _format_dict(value, name_width, value_width, name, tabs=1)
-        else:
-            ret += ("\n%-{}s: %-{}s".format(name_width, value_width) %
-                    (name[:16], value))
-    for name, value in documents:
-        ret += "\n%s" % (_str_helper(value, indent=indent+1))
-        # ret += "\n"
-    ret = ret.split('\n')
-    ret = ["%s%s" % ('  '*indent, line) for line in ret]
-    ret = "\n".join(ret)
-    return ret

@@ -6,10 +6,10 @@ import logging
 
 import six
 import metadatastore
-from metadatastore.commands import _AsDocument
+from metadatastore.document import Document
 from .odm_templates import *
 
-from .commands import (_dereference_uid_fields)
+from .commands import _find_documents, _dereference_reference_fields
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +42,10 @@ def update(mds_document, correction_uid=None):
     -------
     correction_document : metadatastore.odm_templates.Correction
     """
-    _as_document = _AsDocument()
+
     if correction_uid is None:
         correction_uid = str(uuid4())
+    corrected_document_creation_time = ttime.time()
 
     if mds_document._name == 'Event':
         raise ValueError("You are not allowed to modify Events")
@@ -59,7 +60,10 @@ def update(mds_document, correction_uid=None):
     else:
         mds_cls = globals()[mds_document._name]
         kw = {'uid': mds_document.uid}
-    original_document = _as_document(mds_cls.objects.get(**kw))
+
+    original_document, = _find_documents(mds_cls, **kw)
+
+    #todo make sure this works
     if mds_document == original_document:
         # the documents are identical, no need to create a new one!
         logger.debug('mds_document {} and original_document {} are identical. '
@@ -109,8 +113,8 @@ def update(mds_document, correction_uid=None):
 
     setattr(c, 'parent_uid', parent_uid)
     c.save(validate=True, write_concern={"w": 1})
-
-    documentized = _AsDocument()(_dereference_uid_fields(c))
+    _dereference_reference_fields(c)
+    documentized = Document(c)
     # update the correction in-place
     for k, v in six.iteritems(documentized):
         mds_document[k] = v

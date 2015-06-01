@@ -20,11 +20,19 @@ if __name__ == "__main__":
                                       group='awesomer-devs',
                                       project='Nikea',
                                       time=ttime.time())
+    blc = find_beamline_configs(uid=blc_uid)
+    blc = next(blc)
+    print(blc)
+    rs1, = find_run_starts(uid=run_start1_uid)
+    print(rs1)
+    print('blc_uid = "%s"' % blc_uid)
+    print('run_start1_uid = "%s"' % run_start1_uid)
+    print('run_start2_uid = "%s"' % run_start2_uid)
     ev1 = run(run_start_uid=run_start1_uid)
     ev2 = run(run_start_uid=run_start2_uid)
     descriptors = find_event_descriptors(run_start=run_start1_uid, newest=False)
-    descriptor1_uid = next(descriptors).uid
-    descriptor2_uid = next(descriptors).uid
+    descriptor1_uid = next(descriptors)['uid']
+    descriptor2_uid = next(descriptors)['uid']
 
     descriptors = find_event_descriptors(run_start=run_start2_uid, newest=False)
     descriptor3_uid = next(descriptors).uid
