@@ -586,7 +586,8 @@ def find_corrections(newest=False, dereference_uids=True, **kwargs):
     correction_dicts = _find_documents(Correction, **kwargs)
     for correction_dict in correction_dicts:
         _dereference_reference_fields(correction_dict, newest=newest)
-        yield correction_dict
+        yield Document(correction_dict, correction_dict[
+            'original_document_type'] + ' -- Correction')
 
 
 def _dereference_reference_fields(mongo_dict, newest=True):
@@ -606,16 +607,13 @@ def _dereference_reference_fields(mongo_dict, newest=True):
             # is borked...
             if isinstance(field, ObjectId):
                 # find the original document
-                document_generator = func(newest=False, _id=field)
-                document = next(document_generator)
-                if newest:
-                    corrected_document_generator = find_corrections(uid=field)
-                    try:
-                        document = next(corrected_document_generator)
-                    except StopIteration:
-                        pass
+                kwargs = {'_id': field}
             else:
-                # this field is a uid and can only be a Correction document.
+                # it better be a uid
+                kwargs = {'uid': field}
+            document_generator = func(newest=False, **kwargs)
+            document = next(document_generator)
+            if newest:
                 corrected_document_generator = find_corrections(uid=field)
                 try:
                     document = next(corrected_document_generator)

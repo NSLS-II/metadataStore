@@ -9,7 +9,7 @@ import metadatastore
 from metadatastore.document import Document
 from .odm_templates import *
 
-from .commands import _find_documents, _dereference_reference_fields
+from .commands import (_find_documents, find_corrections, find_beamline_configs)
 
 logger = logging.getLogger(__name__)
 
@@ -113,10 +113,14 @@ def update(mds_document, correction_uid=None):
 
     setattr(c, 'parent_uid', parent_uid)
     c.save(validate=True, write_concern={"w": 1})
-    _dereference_reference_fields(c)
-    documentized = Document(c)
+
+    if mds_document._name == 'BeamlineConfig':
+        updated_document, = find_beamline_configs(uid=c.uid)
+    else:
+        updated_document, = find_corrections(uid=c.uid)
+
     # update the correction in-place
-    for k, v in six.iteritems(documentized):
+    for k, v in six.iteritems(updated_document):
         mds_document[k] = v
-    mds_document._name = documentized._name
+    mds_document._name = updated_document._name
     # return _AsDocument()(_dereference_uid_fields(c))

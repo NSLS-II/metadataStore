@@ -56,10 +56,10 @@ if __name__ == "__main__":
 
     events = find_events(descriptor=descriptor)
     ev0 = next(events)
-    print("The next event should have a Corrected EventDescriptor")
+    print("The next event should have a Corrected RunStart")
     print(ev0)
 
     events = find_events(descriptor=descriptor1_uid, newest=False)
     ev0 = next(events)
-    print("The next event should have the original EventDescriptor")
+    print("The next event should have the original RunStart")
     print(ev0)
