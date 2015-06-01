@@ -593,14 +593,20 @@ def find_corrections(newest=False, dereference_uids=True, **kwargs):
 def _dereference_reference_fields(mongo_dict, newest=True):
     """In-place dereferencing
     """
-    reference_fields = {'run_start_id': find_run_starts,
-                        'run_start': find_run_starts,
-                        'descriptor_id': find_event_descriptors,
-                        'descriptor': find_event_descriptors,
-                        'beamline_config_id': find_beamline_configs,
-                        'beamline_config': find_beamline_configs}
+    # reference_fields = {'run_start_id': find_run_starts,
+    #                     'run_start': find_run_starts,
+    #                     'descriptor_id': find_event_descriptors,
+    #                     'descriptor': find_event_descriptors,
+    #                     'beamline_config_id': find_beamline_configs,
+    #                     'beamline_config': find_beamline_configs}
+    reference_fields = {'run_start_id': RunStart,
+                        'run_start': RunStart,
+                        'descriptor_id': EventDescriptor,
+                        'descriptor': EventDescriptor,
+                        'beamline_config_id': BeamlineConfig,
+                        'beamline_config': BeamlineConfig}
 
-    for ref, func in six.iteritems(reference_fields):
+    for ref, klass in six.iteritems(reference_fields):
         field = mongo_dict.get(ref, None)
         if field:
             # then field is either an ObjectId or a uid, or the object model
@@ -608,17 +614,22 @@ def _dereference_reference_fields(mongo_dict, newest=True):
             if isinstance(field, ObjectId):
                 # find the original document
                 kwargs = {'_id': field}
-            else:
+            elif isinstance(field, six.text_type):
                 # it better be a uid
                 kwargs = {'uid': field}
-            document_generator = func(newest=False, **kwargs)
+            else:
+                break
+            document_generator = _find_documents(klass, **kwargs)
             document = next(document_generator)
-            if newest:
-                corrected_document_generator = find_corrections(uid=field)
+            document = Document(document, klass.__name__)
+            if newest and not 'beamline_config' in ref:
+                corrected_document_generator = find_corrections(
+                    uid=document['uid'])
                 try:
                     document = next(corrected_document_generator)
                 except StopIteration:
                     pass
+            _dereference_reference_fields(document, newest=newest)
             mongo_dict[ref] = document
 
 
