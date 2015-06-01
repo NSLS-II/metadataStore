@@ -103,7 +103,7 @@ def test_update_beamline_config():
 def _update_document_helper(find_function, document_name, doc1, doc2, doc3):
     # make sure that all are beamline config documents
     assert_equal(doc1._name, document_name)
-    assert_equal(doc2._name, 'Correction')
+    assert_in('Correction', doc2._name)
     assert_equal(doc2._name, doc3._name)
     # make sure all uids are the same
     assert_equal(doc1.uid, doc2.uid)
@@ -143,11 +143,12 @@ def test_update_run_stop():
                                           newest=False)
     newest_run_start, = find_run_starts(uid=run_start_uid,
                                         newest=True)
-
-    newest_run_stop, = find_run_stops(uid=run_stop_uid,
-                                      newest=True)
     original_run_stop, = find_run_stops(uid=run_stop_uid,
                                         newest=False)
+    print(newest_run_start)
+    newest_run_stop, = find_run_stops(uid=run_stop_uid,
+                                      newest=True)
+    print(newest_run_stop)
 
     # Make sure that the newest_run_stop is a correction and that its
     # run_start is also a correction and that their uid's are equivalent

@@ -63,3 +63,24 @@ if __name__ == "__main__":
     ev0 = next(events)
     print("The next event should have the original RunStart")
     print(ev0)
+
+    run_stop1, = find_run_stops(run_start=run_start1_uid, newest=True)
+    print("The next RunStop should have the new RunStart")
+    print(run_stop1)
+
+    run_stop1, = find_run_stops(run_start=run_start1_uid, newest=False)
+    print("The next RunStop should have the original RunStart")
+    print(run_stop1)
+
+    print("Updating RunStop with uid = %s" % run_stop1.uid)
+
+    run_stop1.angry = True
+    update(run_stop1)
+
+    run_stop1, = find_run_stops(run_start=run_start1_uid, newest=True)
+    print("The next RunStop should have the new RunStart")
+    print(run_stop1)
+
+    run_stop1, = find_run_stops(run_start=run_start1_uid, newest=False)
+    print("The next RunStop should have the original RunStart")
+    print(run_stop1)

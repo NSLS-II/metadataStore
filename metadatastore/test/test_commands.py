@@ -99,8 +99,7 @@ def test_event_descriptor_insertion():
 
     for k in data_keys:
         for ik in data_keys[k]:
-            assert_equal(getattr(ev_desc_mds.data_keys[k], ik),
-                         data_keys[k][ik])
+            assert_equal(ev_desc_mds.data_keys[k][ik], data_keys[k][ik])
 
 
 @raises(mdsc.EventDescriptorIsNoneError)

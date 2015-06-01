@@ -21,7 +21,7 @@ def _replace_embedded_document(event_descriptor):
     return new_data_keys
 
 
-def update(mds_document, correction_uid=None):
+def update(mds_document, justification=None, user=None, correction_uid=None):
     """Update a metadatastore document
 
     Note that this does not actually touch the raw data, it creates a
@@ -117,7 +117,7 @@ def update(mds_document, correction_uid=None):
     if mds_document._name == 'BeamlineConfig':
         updated_document, = find_beamline_configs(uid=c.uid)
     else:
-        updated_document, = find_corrections(uid=c.uid)
+        updated_document = next(find_corrections(uid=c.uid))
 
     # update the correction in-place
     for k, v in six.iteritems(updated_document):

@@ -585,7 +585,8 @@ def find_corrections(newest=False, dereference_uids=True, **kwargs):
     _format_time(kwargs)
     correction_dicts = _find_documents(Correction, **kwargs)
     for correction_dict in correction_dicts:
-        _dereference_reference_fields(correction_dict, newest=newest)
+        if dereference_uids:
+            _dereference_reference_fields(correction_dict, newest=newest)
         yield Document(correction_dict, correction_dict[
             'original_document_type'] + ' -- Correction')
 
@@ -622,7 +623,7 @@ def _dereference_reference_fields(mongo_dict, newest=True):
             document_generator = _find_documents(klass, **kwargs)
             document = next(document_generator)
             document = Document(document, klass.__name__)
-            if newest and not 'beamline_config' in ref:
+            if newest and 'beamline_config' not in ref:
                 corrected_document_generator = find_corrections(
                     uid=document['uid'])
                 try:
@@ -630,6 +631,9 @@ def _dereference_reference_fields(mongo_dict, newest=True):
                 except StopIteration:
                     pass
             _dereference_reference_fields(document, newest=newest)
+            if ref.endswith('_id'):
+                del mongo_dict[ref]
+                ref = ref[:-3]
             mongo_dict[ref] = document
 
 
@@ -724,16 +728,18 @@ def find_run_starts(newest=True, **kwargs):
     """
     mongo_run_start_dicts = _find_documents(RunStart, **kwargs)
     for rs_dict in mongo_run_start_dicts:
+        name = 'RunStart'
         if newest:
             corrected_run_start_dicts = find_corrections(uid=rs_dict['uid'])
             try:
                 rs_dict = next(corrected_run_start_dicts)
+                name += ' -- Correction'
             except StopIteration:
                 pass
         # in-place dereference the fields
         _dereference_reference_fields(rs_dict, newest)
         # lazily turn the mongo objects into safe objects via generator
-        yield Document(rs_dict, "RunStart")
+        yield Document(rs_dict, name)
 
 
 @_ensure_connection
@@ -767,11 +773,10 @@ def find_beamline_configs(newest=False, **kwargs):
         raise ValueError("We currently do not support corrections on "
                          "BeamlineConfig documents. Call this function with "
                          "'newest=False'")
-    mongo_beamline_config_dicts = _find_documents(BeamlineConfig,
-                                                           **kwargs)
+    mongo_beamline_config_dicts = _find_documents(BeamlineConfig, **kwargs)
     for rs_dict in mongo_beamline_config_dicts:
         # in-place dereference the fields
-        _dereference_reference_fields(rs_dict, newest=False)
+        _dereference_reference_fields(rs_dict, newest=newest)
         # lazily turn the mongo objects into safe objects via generator
         yield Document(rs_dict, "BeamlineConfig")
 
@@ -823,16 +828,19 @@ def find_run_stops(run_start=None, newest=True, **kwargs):
 
     mongo_run_stops = _find_documents(RunStop, **kwargs)
     for rs_dict in mongo_run_stops:
+        name = "RunStop"
         if newest:
-            corrected_run_stop_dicts = find_corrections(uid=rs_dict['uid'])
+            corrected_run_stop_dicts = find_corrections(uid=rs_dict['uid'],
+                                                        dereference_uids=False)
             try:
                 rs_dict = next(corrected_run_stop_dicts)
+                name += ' -- Correction'
             except StopIteration:
                 pass
         # in-place dereference the fields
         _dereference_reference_fields(rs_dict, newest)
         # lazily turn the mongo objects into safe objects via generator
-        yield Document(rs_dict, "RunStop")
+        yield Document(rs_dict, name)
 
 
 @_ensure_connection
@@ -882,17 +890,19 @@ def find_event_descriptors(run_start=None, newest=True,
 
     mongo_event_descriptors = _find_documents(EventDescriptor, **kwargs)
     for descriptor_dict in mongo_event_descriptors:
+        name = "EventDescriptor"
         if newest:
             corrected_descriptor_dicts = find_corrections(
-                uid=descriptor_dict['uid'])
+                uid=descriptor_dict['uid'], dereference_uids=False)
             try:
                 descriptor_dict = next(corrected_descriptor_dicts)
+                name += ' -- Correction'
             except StopIteration:
                 pass
         # in-place dereference the fields
         _dereference_reference_fields(descriptor_dict, newest)
         # lazily turn the mongo objects into safe objects via generator
-        yield Document(descriptor_dict, "EventDescriptor")
+        yield Document(descriptor_dict, name)
 
 
 @_ensure_connection
