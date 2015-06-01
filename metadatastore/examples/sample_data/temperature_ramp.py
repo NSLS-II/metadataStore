@@ -41,7 +41,7 @@ def run(run_start_uid=None, sleep=0):
         time = float(2 * i + 0.5 * rs.randn()) + base_time
         data = {'point_det': point_det_data[i]}
         timestamps = {'point_det': time}
-        event_dict = dict(descriptor=ev_desc1_uid, seq_num=i,
+        event_dict = dict(descriptor=desc1_uid, seq_num=i,
                           time=time, data=data, timestamps=timestamps)
         event_uid = insert_event(**event_dict)
         # grab the actual event from metadatastore
@@ -53,7 +53,7 @@ def run(run_start_uid=None, sleep=0):
         time = float(time) + base_time
         data = {'Tsam': temp}
         timestamps = {'Tsam': time}
-        event_dict = dict(descriptor=ev_desc2_uid, time=time,
+        event_dict = dict(descriptor=desc2_uid, time=time,
                           data=data, timestamps=timestamps, seq_num=i)
         event_uid = insert_event(**event_dict)
         event, = find_events(uid=event_uid)

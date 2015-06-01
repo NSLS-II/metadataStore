@@ -166,18 +166,6 @@ def test_run_stop_insertion():
         assert_equal(known_value, getattr(run_stop, attr))
 
 
-#### Testing misc metadatastore functionality ##################################
-
-
-@raises(ValueError)
-def test_proper_data_format():
-    """Make sure metadatastore correctly barfs if the values of the data
-    dictionary are not formatted as a twople of (value, timestamp)
-    """
-    data = {'key': [15, ]}
-    mdsc._validate_data(data)
-
-
 #### Testing metadatastore find functionality ##################################
 def _find_helper(func, kw):
     func(**kw)
