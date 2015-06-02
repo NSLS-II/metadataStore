@@ -1,8 +1,8 @@
 [run]
-source=metadataStore
+source=metadatastore
 [report]
 omit =
-    metadataStore/test/*
+    metadatastore/test/*
 
 exclude_lines =
     def set_default
