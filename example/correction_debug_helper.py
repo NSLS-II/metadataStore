@@ -1,7 +1,7 @@
 from metadatastore.commands import *
 from metadatastore.corrections import update
 import time as ttime
-from metadatastore.examples.sample_data.ten_thousand_events import run
+from metadatastore.examples.sample_data.temperature_ramp import run
 
 if __name__ == "__main__":
     blc_uid = insert_beamline_config({}, time=ttime.time())

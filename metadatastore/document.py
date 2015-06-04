@@ -199,7 +199,7 @@ def _str_helper(document, name=None, indent=0):
     ret = "\n%s\n%s" % (name, mapping[indent]*len(name))
 
     documents = []
-    name_width = 16
+    name_width = max([len(key) for key in document.keys()]) + 1
     value_width = 40
     for name, value in sorted(document.items()):
         if isinstance(value, Document):
@@ -211,11 +211,11 @@ def _str_helper(document, name=None, indent=0):
             ret += "\n%s" % _format_data_keys_dict(value).__str__()
         elif isinstance(value, Mapping):
             # format dicts reasonably
-            ret += "\n%-{}s:".format(name_width, value_width) % (name)
+            ret += "\n%-{}s:".format(name_width, value_width) % name
             ret += _format_dict(value, name_width, value_width, name, tabs=1)
         else:
             ret += ("\n%-{}s: %-{}s".format(name_width, value_width) %
-                    (name[:16], value))
+                    (name, value))
     for name, value in documents:
         ret += "\n%s" % (_str_helper(value, indent=indent+1))
         # ret += "\n"
