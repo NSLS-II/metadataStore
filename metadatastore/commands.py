@@ -9,6 +9,7 @@ from datetime import datetime
 from itertools import chain
 from collections import Mapping
 import collections
+import time as ttime
 
 from mongoengine.context_managers import no_dereference
 import pytz
@@ -57,11 +58,6 @@ def db_disconnect():
 
 
 def db_connect(database, host, port):
-    try:
-        conn = mongoengine.connection.get_connection(ALIAS)
-    except mongoengine.ConnectionError:
-        conn = None
-
     """Helper function to deal with stateful connections to mongoengine"""
     return connect(db=database, host=host, port=port, alias=ALIAS)
 
@@ -267,7 +263,13 @@ def insert_beamline_config(config_params, time, uid=None):
     if uid is None:
         uid = str(uuid.uuid4())
     blc = BeamlineConfig(config_params=config_params, time=time, uid=uid)
+    before_save = ttime.time()
     blc.save(validate=True, write_concern={"w": 1})
+    after_save = ttime.time()
+    print("time it took to save the document = %s sec" % (ttime.time() -
+                                                          before_save))
+    print("time it took from the time argument passed to the insert function "
+          "and when the document was saved = %s sec" % (after_save - time))
     logger.debug("Inserted BeamlineConfig with uid %s",
                  blc.uid)
 
@@ -559,7 +561,15 @@ def find_corrections(newest=False, dereference_uids=True, **kwargs):
     Parameters
     ----------
     newest : bool, optional
+        defaults to False
         True: only return the newest one
+        False: return all corrections that match the query
+    dereference_uids : bool, optional
+        defaults to True
+        True: look for references to other documents and dereference them (
+            find the referenced document and change the reference to the full
+            document)
+        False: return the document with uid references intact
     uid : str, optional
         The uid of the original metadatastore Document, shared between all
         instances of its Corrections
@@ -619,6 +629,7 @@ def _dereference_reference_fields(mongo_dict, newest=True):
                 # it better be a uid
                 kwargs = {'uid': field}
             else:
+                # this is to catch cases of already dereferenced documents
                 break
             document_generator = _find_documents(klass, **kwargs)
             document = next(document_generator)
@@ -632,6 +643,9 @@ def _dereference_reference_fields(mongo_dict, newest=True):
                     pass
             _dereference_reference_fields(document, newest=newest)
             if ref.endswith('_id'):
+                # if the field ends with `_id` then it is a ReferenceField
+                # and we do not want that to leak out of metadatastore. Thus
+                # it is being deleted
                 del mongo_dict[ref]
                 ref = ref[:-3]
             mongo_dict[ref] = document
