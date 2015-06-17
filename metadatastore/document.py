@@ -1,9 +1,11 @@
+import re
 import six
 import mongoengine
 from mongoengine.base.datastructures import BaseDict, BaseList
 from mongoengine.base.document import BaseDocument
 from bson.objectid import ObjectId
 from bson.dbref import DBRef
+import time as ttime
 from datetime import datetime
 from itertools import chain
 from collections import MutableMapping, Mapping
@@ -15,6 +17,10 @@ import numpy as np
 
 
 __all__ = ['Document']
+
+
+DATETIME_PAT = re.compile(
+    "(\d{4})-(\d{2})-(\d{2})T(\d{2})\:(\d{2})\:(\d{2})\+(\d{2})\:(\d{2})")
 
 
 def _normalize(in_val, cache):
@@ -145,10 +151,10 @@ class Document(MutableMapping):
                 attr = _normalize(attr, cache)
 
             document[field] = attr
-        # For debugging, add a human-friendly time_as_datetime attribute.
+        # For debugging, add a human-friendly time_as_str attribute.
         if 'time' in document:
-            document.time_as_datetime = datetime.fromtimestamp(
-                    document.time)
+            document.time_as_str = datetime.fromtimestamp(
+                    document.time).isoformat()
         return document
 
     @classmethod
@@ -204,10 +210,10 @@ class Document(MutableMapping):
                     document[new_key] = ref_doc
             else:
                 document[k] = v
-        # For debugging, add a human-friendly time_as_datetime attribute.
+        # For debugging, add a human-friendly time_as_str attribute.
         if 'time' in document:
-            document.time_as_datetime = datetime.fromtimestamp(
-                document.time)
+            document.time_as_str = datetime.fromtimestamp(
+                document.time).time_as_str
         return document
 
     def __repr__(self):
@@ -323,9 +329,9 @@ def html_table_repr(obj):
             output += "<td style='border: none;'>" + html_table_repr(value)
             output += "</td></tr>"
         output += "</table>"
-    elif isinstance(obj, datetime):
+    elif isinstance(obj, str) and DATETIME_PAT.match(obj) is not None:
         # '1969-12-31 19:00:00' -> '1969-12-31 19:00:00 (45 years ago)'
-        human_time = humanize.naturaltime(datetime.now() - obj)
+        human_time = humanize.naturaltime(ttime.time() - obj)
         return str(obj) + '  ({0})'.format(human_time)
     else:
         return str(obj)
