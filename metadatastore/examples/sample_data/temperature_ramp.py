@@ -9,6 +9,7 @@ start, stop, step, points_per_step = 0, 6, 1, 7
 deadband_size = 0.9
 num_exposures = 17
 
+
 @common.example
 def run(run_start_uid=None, sleep=0):
     if sleep != 0:
@@ -23,11 +24,14 @@ def run(run_start_uid=None, sleep=0):
     # Create Event Descriptors
     data_keys1 = {'point_det': dict(source='PV:ES:PointDet', dtype='number')}
     data_keys2 = {'Tsam': dict(source='PV:ES:Tsam', dtype='number')}
-    ev_desc1_uid = insert_event_descriptor(run_start=run_start_uid,
-                                           data_keys=data_keys1, time=common.get_time())
-    ev_desc2_uid = insert_event_descriptor(run_start=run_start_uid,
-                                           data_keys=data_keys2, time=common.get_time())
-
+    desc1_uid = insert_event_descriptor(run_start=run_start_uid,
+                                        data_keys=data_keys1,
+                                        time=common.get_time())
+    print('descriptor1_uid = "%s"' % desc1_uid)
+    desc2_uid = insert_event_descriptor(run_start=run_start_uid,
+                                        data_keys=data_keys2,
+                                        time=common.get_time())
+    print('descriptor2_uid = "%s"' % desc2_uid)
     # Create Events.
     events = []
 
@@ -37,7 +41,7 @@ def run(run_start_uid=None, sleep=0):
         time = float(2 * i + 0.5 * rs.randn()) + base_time
         data = {'point_det': point_det_data[i]}
         timestamps = {'point_det': time}
-        event_dict = dict(descriptor=ev_desc1_uid, seq_num=i,
+        event_dict = dict(descriptor=desc1_uid, seq_num=i,
                           time=time, data=data, timestamps=timestamps)
         event_uid = insert_event(**event_dict)
         # grab the actual event from metadatastore
@@ -46,10 +50,10 @@ def run(run_start_uid=None, sleep=0):
 
     # Temperature Events
     for i, (time, temp) in enumerate(zip(*deadbanded_ramp)):
-        time = float(time) + base_time 
+        time = float(time) + base_time
         data = {'Tsam': temp}
         timestamps = {'Tsam': time}
-        event_dict = dict(descriptor=ev_desc2_uid, time=time,
+        event_dict = dict(descriptor=desc2_uid, time=time,
                           data=data, timestamps=timestamps, seq_num=i)
         event_uid = insert_event(**event_dict)
         event, = find_events(uid=event_uid)

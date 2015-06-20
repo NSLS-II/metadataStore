@@ -11,7 +11,7 @@ ALIAS = 'mds'
 
 
 __all__ = ['BeamlineConfig', 'RunStart', 'RunStop', 'DataKey',
-           'EventDescriptor', 'Event']
+           'EventDescriptor', 'Event', 'Correction']
 
 
 class BeamlineConfig(DynamicDocument):
@@ -185,3 +185,34 @@ class Event(Document):
     data = DictField(required=True)
     time = FloatField(required=True)
     meta = {'indexes': ['-descriptor', '-_id', '-uid'], 'db_alias': ALIAS}
+
+
+class Correction(DynamicDocument):
+    """
+
+    Attributes
+    ----------
+    uid : str
+        Identifier for the raw document (raw here being documents in the set
+        {RunStart, RunStop, EventDescriptor, BeamlineConfig}
+    correction_uid : str
+        Unique identifier for this ``Document``
+    time : float
+        Unix epoch time of the creation of this ``Document``
+    parent_correction_uid : str
+        If this correction has a parent, this is the ``correction_uid`` of
+        the previous correction
+
+    Notes
+    -----
+    a ``correction_number`` is added on the way out by doing a
+    correction_number = len(Correction.objects(__raw__={'uid': uid}))
+    """
+    uid = StringField(required=True, unique=False)
+    correction_uid = StringField(required=True, unique=True)
+    time = FloatField(required=True)
+    original_document_type = StringField()
+    # raw_uid = StringField(required=True, unique=False)
+    # parent_correction_uid = StringField()
+    meta = {'indexes': ['-_id', '-uid', '-time', '-correction_uid'],
+            'db_alias': ALIAS}

@@ -99,8 +99,7 @@ def test_event_descriptor_insertion():
 
     for k in data_keys:
         for ik in data_keys[k]:
-            assert_equal(getattr(ev_desc_mds.data_keys[k], ik),
-                         data_keys[k][ik])
+            assert_equal(ev_desc_mds.data_keys[k][ik], data_keys[k][ik])
 
 
 @raises(mdsc.EventDescriptorIsNoneError)
@@ -165,24 +164,6 @@ def test_run_stop_insertion():
                    'uid': run_stop_uid}
     for attr, known_value in comparisons.items():
         assert_equal(known_value, getattr(run_stop, attr))
-
-
-#### Testing misc metadatastore functionality ##################################
-
-
-def test_dict_key_replace_rt():
-    """Ensure metadatastore deals with dots in potential data keys correctly
-    """
-    test_d = {'a.b': 1, 'b': .5, 'c.d.e': None}
-    src_in, dst_in = mdsc._src_dst('in')
-    test_d_in = mdsc._replace_dict_keys(test_d, src_in, dst_in)
-    src_out, dst_out = mdsc._src_dst('out')
-    test_d_out = mdsc._replace_dict_keys(test_d_in, src_out, dst_out)
-    assert_equal(test_d_out, test_d)
-
-
-def test_src_dst_fail():
-    assert_raises(ValueError, mdsc._src_dst, 'aardvark')
 
 
 #### Testing metadatastore find functionality ##################################

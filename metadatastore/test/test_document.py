@@ -37,9 +37,8 @@ def teardown():
 def setup():
     mds_setup()
     global blc_uid, run_start_uid, document_insertion_time, run_stop_uid
-    global descriptor_uid
+    global descriptor1_uid, descriptor2_uid
     document_insertion_time = ttime.time()
-    temperature_ramp.run()
     blc_uid = mdsc.insert_beamline_config({}, time=document_insertion_time)
     run_start_uid = mdsc.insert_run_start(scan_id=3022013,
                                           beamline_id='testbed',
@@ -51,18 +50,23 @@ def setup():
     run_stop_uid = mdsc.insert_run_stop(run_start=run_start_uid,
                                         time=ttime.time())
 
+    temperature_ramp.run(run_start_uid=run_start_uid)
+
 
 def test_document_funcs_for_smoke():
     global run_start_uid, descriptor_uid
     # todo this next line will break once NSLS-II/metadatastore#142 is merged
     run_start, = find_run_starts(uid=run_start_uid)
-    descriptors = [desc for desc in find_event_descriptors(uid=descriptor_uid)]
+    descriptors = [desc for desc in find_event_descriptors(
+        run_start=run_start_uid)]
     run_stop, = find_run_stops(uid=run_stop_uid)
     documents = [run_start, run_stop]
     documents.extend(descriptors)
     attrs = ['__repr__', '__str__', '_repr_html_', ]
     for doc, attr in product(documents, attrs):
         getattr(doc, attr)()
+
+    print(descriptors[0])
 
 
 # todo def test_from_mongo():

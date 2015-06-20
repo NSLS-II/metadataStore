@@ -1,22 +1,30 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
-import six
 from functools import wraps
 from itertools import count
-from .odm_templates import (RunStart, BeamlineConfig, RunStop,
-                            EventDescriptor, Event, DataKey, ALIAS)
-from .document import Document
-import datetime
 import logging
+from collections import MutableMapping
+import uuid
+from datetime import datetime
+from itertools import chain
+from collections import Mapping
+import collections
+import time as ttime
+
+from mongoengine.context_managers import no_dereference
+import pytz
+import six
+import mongoengine
+from mongoengine.base.datastructures import BaseDict, BaseList
+from mongoengine.base.document import BaseDocument
+from bson.objectid import ObjectId
+from bson.dbref import DBRef
+from .odm_templates import (RunStart, BeamlineConfig, RunStop,
+                            EventDescriptor, Event, DataKey, ALIAS, Correction)
 from metadatastore import conf
 from mongoengine import connect,  ReferenceField
-import mongoengine.connection
 
-import datetime
-import pytz
-
-import uuid
-from bson import ObjectId
+from .document import Document
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +33,12 @@ __all__ = ['insert_beamline_config', 'insert_run_start', 'insert_event',
            'insert_run_stop', 'insert_event_descriptor', 'find_run_stops',
            'find_beamline_configs', 'find_event_descriptors', 'find_last',
            'find_events', 'find_run_starts', 'db_connect', 'db_disconnect',
-           'format_data_keys', 'format_events', 'reorganize_event']
+           'format_data_keys', 'format_events', 'reorganize_event',
+           'find_corrections']
 
 
 def _ensure_connection(func):
+
     @wraps(func)
     def inner(*args, **kwargs):
         database = conf.connection_config['database']
@@ -252,12 +262,16 @@ def insert_beamline_config(config_params, time, uid=None):
     """
     if uid is None:
         uid = str(uuid.uuid4())
-    beamline_config = BeamlineConfig(config_params=config_params,
-                                     time=time,
-                                     uid=uid)
-    beamline_config.save(validate=True, write_concern={"w": 1})
+    blc = BeamlineConfig(config_params=config_params, time=time, uid=uid)
+    before_save = ttime.time()
+    blc.save(validate=True, write_concern={"w": 1})
+    after_save = ttime.time()
+    print("time it took to save the document = %s sec" % (ttime.time() -
+                                                          before_save))
+    print("time it took from the time argument passed to the insert function "
+          "and when the document was saved = %s sec" % (after_save - time))
     logger.debug("Inserted BeamlineConfig with uid %s",
-                 beamline_config.uid)
+                 blc.uid)
 
     return uid
 
@@ -303,9 +317,6 @@ def insert_event_descriptor(run_start, data_keys, time, uid=None,
                                        uid=uid,
                                        time_as_datetime=_todatetime(time),
                                        **custom)
-
-    event_descriptor = _replace_descriptor_data_key_dots(event_descriptor,
-                                                         direction='in')
 
     event_descriptor.save(validate=True, write_concern={"w": 1})
     logger.debug("Inserted EventDescriptor with uid %s referencing "
@@ -355,7 +366,6 @@ def insert_event(descriptor, time, data, timestamps, seq_num, uid=None):
     event = Event(descriptor_id=descriptor, uid=uid,
                   data=val_ts_tuple, time=time, seq_num=seq_num)
 
-    event = _replace_event_data_key_dots(event, direction='in')
     event.save(validate=True, write_concern={"w": 1})
     logger.debug("Inserted Event with uid %s referencing "
                  "EventDescriptor with uid %s", event.uid,
@@ -403,9 +413,10 @@ class _AsDocumentRaw(object):
     def __init__(self):
         self._cache = dict()
 
-    def __call__(self, name, input_dict, dref_fields):
+    def __call__(self, name, input_dict, dref_fields, newest):
 
-        return Document.from_dict(name, input_dict, dref_fields, self._cache)
+        return Document.from_dict(name, input_dict, newest, dref_fields,
+                                  self._cache)
 
 
 def _format_time(search_dict):
@@ -443,11 +454,11 @@ _doc_ts_formats = '\n'.join('\t- {}'.format(_) for _ in _TS_FORMATS)
 def _normalize_human_friendly_time(val):
     """Given one of :
     - string (in one of the formats below)
-    - datetime (eg. datetime.datetime.now()), with or without tzinfo)
+    - datetime (eg. datetime.now()), with or without tzinfo)
     - timestamp (eg. time.time())
     return a timestamp (seconds since jan 1 1970 UTC).
 
-    Non string/datetime.datetime values are returned unaltered.
+    Non string/datetime values are returned unaltered.
     Leading/trailing whitespace is stripped.
     Supported formats:
     {}
@@ -456,7 +467,7 @@ def _normalize_human_friendly_time(val):
 
     tz = conf.connection_config['timezone']  # e.g., 'US/Eastern'
     zone = pytz.timezone(tz)  # tz as datetime.tzinfo object
-    epoch = pytz.UTC.localize(datetime.datetime(1970, 1, 1))
+    epoch = pytz.UTC.localize(datetime(1970, 1, 1))
     check = True
 
     if isinstance(val, six.string_types):
@@ -472,23 +483,23 @@ def _normalize_human_friendly_time(val):
 
         for fmt in _TS_FORMATS:
             try:
-                ts = datetime.datetime.strptime(val, fmt)
+                ts = datetime.strptime(val, fmt)
                 break
             except ValueError:
                 pass
 
         try:
-            if isinstance(ts, datetime.datetime):
+            if isinstance(ts, datetime):
                 val = ts
                 check = False
             else:
-                raise TypeError('expected datetime.datetime,'
+                raise TypeError('expected datetime,'
                                 ' got {:r}'.format(ts))
 
         except NameError:
             raise ValueError('failed to parse time: ' + repr(val))
 
-    if check and not isinstance(val, datetime.datetime):
+    if check and not isinstance(val, datetime):
         return val
 
     if val.tzinfo is None:
@@ -541,13 +552,30 @@ def _get_mongo_document(document, document_cls):
     mongo_document = document_cls.objects(__raw__={'uid': document})[0]
     return mongo_document
 
+def _dereference_uid_fields():
+    return
 
 @_ensure_connection
-def find_run_starts(**kwargs):
-    """Given search criteria, locate RunStart Documents.
-
+def find_corrections(newest=False, dereference_uids=True, **kwargs):
+    """
     Parameters
     ----------
+    newest : bool, optional
+        defaults to False
+        True: only return the newest one
+        False: return all corrections that match the query
+    dereference_uids : bool, optional
+        defaults to True
+        True: look for references to other documents and dereference them (
+            find the referenced document and change the reference to the full
+            document)
+        False: return the document with uid references intact
+    uid : str, optional
+        The uid of the original metadatastore Document, shared between all
+        instances of its Corrections
+    correction_uid : str, optional
+        The unique identifier for one Correction document in the Correction
+        collection
     start_time : time-like, optional
         time-like representation of the earliest time that a RunStart
         was created. Valid options are:
@@ -556,7 +584,126 @@ def find_run_starts(**kwargs):
            - '2015-01'
            - '2015-01-30'
            - '2015-03-30 03:00:00'
-           - datetime.datetime.now()
+           - datetime.now()
+    stop_time : time-like, optional
+        timestamp of the latest time that a RunStart was created. See
+        docs for `start_time` for examples.
+    uid : str, optional
+        Globally unique id string provided to metadatastore
+    """
+    _normalize_object_id(kwargs, '_id')
+    _format_time(kwargs)
+    correction_dicts = _find_documents(Correction, **kwargs)
+    for correction_dict in correction_dicts:
+        if dereference_uids:
+            _dereference_reference_fields(correction_dict, newest=newest)
+        yield Document(correction_dict, correction_dict[
+            'original_document_type'] + ' -- Correction')
+
+
+def _dereference_reference_fields(mongo_dict, newest=True):
+    """In-place dereferencing
+    """
+    # reference_fields = {'run_start_id': find_run_starts,
+    #                     'run_start': find_run_starts,
+    #                     'descriptor_id': find_event_descriptors,
+    #                     'descriptor': find_event_descriptors,
+    #                     'beamline_config_id': find_beamline_configs,
+    #                     'beamline_config': find_beamline_configs}
+    reference_fields = {'run_start_id': RunStart,
+                        'run_start': RunStart,
+                        'descriptor_id': EventDescriptor,
+                        'descriptor': EventDescriptor,
+                        'beamline_config_id': BeamlineConfig,
+                        'beamline_config': BeamlineConfig}
+
+    for ref, klass in six.iteritems(reference_fields):
+        field = mongo_dict.get(ref, None)
+        if field:
+            # then field is either an ObjectId or a uid, or the object model
+            # is borked...
+            if isinstance(field, ObjectId):
+                # find the original document
+                kwargs = {'_id': field}
+            elif isinstance(field, six.text_type):
+                # it better be a uid
+                kwargs = {'uid': field}
+            else:
+                # this is to catch cases of already dereferenced documents
+                break
+            document_generator = _find_documents(klass, **kwargs)
+            document = next(document_generator)
+            document = Document(document, klass.__name__)
+            if newest and 'beamline_config' not in ref:
+                corrected_document_generator = find_corrections(
+                    uid=document['uid'])
+                try:
+                    document = next(corrected_document_generator)
+                except StopIteration:
+                    pass
+            _dereference_reference_fields(document, newest=newest)
+            if ref.endswith('_id'):
+                # if the field ends with `_id` then it is a ReferenceField
+                # and we do not want that to leak out of metadatastore. Thus
+                # it is being deleted
+                del mongo_dict[ref]
+                ref = ref[:-3]
+            mongo_dict[ref] = document
+
+
+def _find_documents(DocumentClass, **kwargs):
+    """Helper function to extract copy/paste code from find_* functions.
+
+    This function does not derefence any fields.
+
+    Parameters
+    ----------
+    DocumentClass : metadatastore.document.* class
+        The metadatastore class
+    kwargs : dict
+        See relevant find_* function for relevant kwargs
+
+    Returns
+    -------
+    as_document : list
+        List of mongo dictionaries
+    """
+    _normalize_object_id(kwargs, '_id')
+    _format_time(kwargs)
+    with no_dereference(DocumentClass) as DocumentClass:
+        docs = DocumentClass.objects(__raw__=kwargs).order_by('-_id')
+        docs = docs.as_pymongo()
+        for doc in docs:
+            yield doc
+
+
+def _get_uid(document):
+    try:
+        return document.uid
+    except AttributeError:
+        # the document is either a string or None. It does not matter which
+        # at this point
+        return document
+
+
+@_ensure_connection
+def find_run_starts(newest=True, **kwargs):
+    """Given search criteria, locate RunStart Documents.
+
+    Parameters
+    ----------
+    newest : bool
+        True: Find and use the most recent correction for this document
+        False: Do not search for corrections and use the raw data
+    start_time : time-like, optional
+        time-like representation of the earliest time that a RunStart
+        was created. Valid options are:
+           - timestamps --> time.time()
+           - '2015'
+           - '2015-01'
+           - '2015-01-30'
+           - '2015-03-30 03:00:00'
+           - datetime.now()
     stop_time : time-like, optional
         timestamp of the latest time that a RunStart was created. See
         docs for `start_time` for examples.
@@ -593,17 +740,24 @@ def find_run_starts(**kwargs):
     ...                stop_time=time.time())
 
     """
-    _normalize_object_id(kwargs, '_id')
-    _format_time(kwargs)
-
-    rs_objects = RunStart.objects(__raw__=kwargs).order_by('-time')
-    rs_objects = rs_objects.no_dereference()
-    _as_document = _AsDocument()
-    return (_as_document(rs) for rs in rs_objects)
+    mongo_run_start_dicts = _find_documents(RunStart, **kwargs)
+    for rs_dict in mongo_run_start_dicts:
+        name = 'RunStart'
+        if newest:
+            corrected_run_start_dicts = find_corrections(uid=rs_dict['uid'])
+            try:
+                rs_dict = next(corrected_run_start_dicts)
+                name += ' -- Correction'
+            except StopIteration:
+                pass
+        # in-place dereference the fields
+        _dereference_reference_fields(rs_dict, newest)
+        # lazily turn the mongo objects into safe objects via generator
+        yield Document(rs_dict, name)
 
 
 @_ensure_connection
-def find_beamline_configs(**kwargs):
+def find_beamline_configs(newest=False, **kwargs):
     """Given search criteria, locate BeamlineConfig Documents.
 
     Parameters
@@ -616,7 +770,7 @@ def find_beamline_configs(**kwargs):
            - '2015-01'
            - '2015-01-30'
            - '2015-03-30 03:00:00'
-           - datetime.datetime.now()
+           - datetime.now()
     stop_time : time-like, optional
         timestamp of the latest time that a BeamlineConfig was created. See
             docs for `start_time` for examples.
@@ -629,16 +783,20 @@ def find_beamline_configs(**kwargs):
     -------
     beamline_configs : iterable of metadatastore.document.Document objects
     """
-    _format_time(kwargs)
-    # ordered by _id because it is not guaranteed there will be time in cbonfig
-    beamline_configs = BeamlineConfig.objects(__raw__=kwargs).order_by('-_id')
-    beamline_configs = beamline_configs.no_dereference()
-    _as_document = _AsDocument()
-    return (_as_document(bc) for bc in beamline_configs)
+    if newest:
+        raise ValueError("We currently do not support corrections on "
+                         "BeamlineConfig documents. Call this function with "
+                         "'newest=False'")
+    mongo_beamline_config_dicts = _find_documents(BeamlineConfig, **kwargs)
+    for rs_dict in mongo_beamline_config_dicts:
+        # in-place dereference the fields
+        _dereference_reference_fields(rs_dict, newest=newest)
+        # lazily turn the mongo objects into safe objects via generator
+        yield Document(rs_dict, "BeamlineConfig")
 
 
 @_ensure_connection
-def find_run_stops(run_start=None, **kwargs):
+def find_run_stops(run_start=None, newest=True, **kwargs):
     """Given search criteria, locate RunStop Documents.
 
     Parameters
@@ -646,6 +804,9 @@ def find_run_stops(run_start=None, **kwargs):
     run_start : metadatastore.document.Document or str, optional
         The metadatastore run start document or the metadatastore uid to get
         the corresponding run end for
+    newest : bool
+        True: Find and use the most recent correction for this document
+        False: Do not search for corrections and use the raw data
     start_time : time-like, optional
         time-like representation of the earliest time that a RunStop
         was created. Valid options are:
@@ -654,7 +815,7 @@ def find_run_stops(run_start=None, **kwargs):
            - '2015-01'
            - '2015-01-30'
            - '2015-03-30 03:00:00'
-           - datetime.datetime.now()
+           - datetime.now()
     stop_time : time-like, optional
         timestamp of the latest time that a RunStop was created. See
         docs for `start_time` for examples.
@@ -671,24 +832,34 @@ def find_run_stops(run_start=None, **kwargs):
     -------
     run_stop : iterable of metadatastore.document.Document objects
     """
-    _format_time(kwargs)
-    # get the actual mongo document
     if run_start:
-        run_start = _get_mongo_document(run_start, RunStart)
-        kwargs['run_start_id'] = run_start.id
+        run_start_uid = _get_uid(run_start)
+        mongo_run_start = _find_documents(RunStart, uid=run_start_uid)
+        mongo_run_start = next(mongo_run_start)
+        kwargs['run_start_id'] = mongo_run_start['_id']
 
-    _normalize_object_id(kwargs, '_id')
     _normalize_object_id(kwargs, 'run_start_id')
-    run_stop = RunStop.objects(__raw__=kwargs).order_by('-time')
-    run_stop = run_stop.no_dereference()
 
-    _as_document = _AsDocument()
-
-    return (_as_document(rs) for rs in run_stop)
+    mongo_run_stops = _find_documents(RunStop, **kwargs)
+    for rs_dict in mongo_run_stops:
+        name = "RunStop"
+        if newest:
+            corrected_run_stop_dicts = find_corrections(uid=rs_dict['uid'],
+                                                        dereference_uids=False)
+            try:
+                rs_dict = next(corrected_run_stop_dicts)
+                name += ' -- Correction'
+            except StopIteration:
+                pass
+        # in-place dereference the fields
+        _dereference_reference_fields(rs_dict, newest)
+        # lazily turn the mongo objects into safe objects via generator
+        yield Document(rs_dict, name)
 
 
 @_ensure_connection
-def find_event_descriptors(run_start=None, **kwargs):
+def find_event_descriptors(run_start=None, newest=True,
+                           **kwargs):
     """Given search criteria, locate EventDescriptor Documents.
 
     Parameters
@@ -700,6 +871,8 @@ def find_event_descriptors(run_start=None, **kwargs):
         if ``str``:
             Globally unique id string provided to metadatastore for the
             RunStart Document.
+    newest : bool
+
     start_time : time-like, optional
         time-like representation of the earliest time that an EventDescriptor
         was created. Valid options are:
@@ -708,7 +881,7 @@ def find_event_descriptors(run_start=None, **kwargs):
            - '2015-01'
            - '2015-01-30'
            - '2015-03-30 03:00:00'
-           - datetime.datetime.now()
+           - datetime.now()
     stop_time : time-like, optional
         timestamp of the latest time that an EventDescriptor was created. See
         docs for `start_time` for examples.
@@ -721,26 +894,33 @@ def find_event_descriptors(run_start=None, **kwargs):
     -------
     event_descriptor : iterable of metadatastore.document.Document objects
     """
-    _format_time(kwargs)
-    _as_document = _AsDocument()
-    # get the actual mongo document
     if run_start:
-        run_start = _get_mongo_document(run_start, RunStart)
-        kwargs['run_start_id'] = run_start.id
+        run_start_uid = _get_uid(run_start)
+        mongo_run_start = _find_documents(RunStart, uid=run_start_uid)
+        mongo_run_start = next(mongo_run_start)
+        kwargs['run_start_id'] = mongo_run_start['_id']
 
-    _normalize_object_id(kwargs, '_id')
     _normalize_object_id(kwargs, 'run_start_id')
-    event_descriptor_objects = EventDescriptor.objects(__raw__=kwargs)
 
-    event_descriptor_objects = event_descriptor_objects.no_dereference()
-    for event_descriptor in event_descriptor_objects.order_by('-time'):
-        event_descriptor = _replace_descriptor_data_key_dots(event_descriptor,
-                                                             direction='out')
-        yield _as_document(event_descriptor)
+    mongo_event_descriptors = _find_documents(EventDescriptor, **kwargs)
+    for descriptor_dict in mongo_event_descriptors:
+        name = "EventDescriptor"
+        if newest:
+            corrected_descriptor_dicts = find_corrections(
+                uid=descriptor_dict['uid'], dereference_uids=False)
+            try:
+                descriptor_dict = next(corrected_descriptor_dicts)
+                name += ' -- Correction'
+            except StopIteration:
+                pass
+        # in-place dereference the fields
+        _dereference_reference_fields(descriptor_dict, newest)
+        # lazily turn the mongo objects into safe objects via generator
+        yield Document(descriptor_dict, name)
 
 
 @_ensure_connection
-def find_events(descriptor=None, **kwargs):
+def find_events(descriptor=None, newest=True, **kwargs):
     """Given search criteria, locate Event Documents.
 
     Parameters
@@ -753,7 +933,7 @@ def find_events(descriptor=None, **kwargs):
            - '2015-01'
            - '2015-01-30'
            - '2015-03-30 03:00:00'
-           - datetime.datetime.now()
+           - datetime.now()
     stop_time : time-like, optional
         timestamp of the latest time that an Event was created. See
         docs for `start_time` for examples.
@@ -773,35 +953,26 @@ def find_events(descriptor=None, **kwargs):
     -------
     events : iterable of metadatastore.document.Document objects
     """
-    # Some user-friendly error messages for an easy mistake to make
-    if 'event_descriptor' in kwargs:
-        raise ValueError("Use 'descriptor', not 'event_descriptor'.")
-    if 'event_descriptor_id' in kwargs:
-        raise ValueError("Use 'descriptor_id', not 'event_descriptor_id'.")
 
-    _format_time(kwargs)
-    # get the actual mongo document
     if descriptor:
-        descriptor = _get_mongo_document(descriptor, EventDescriptor)
-        kwargs['descriptor_id'] = descriptor.id
+        descriptor_uid = _get_uid(descriptor)
+        mongo_descriptor = _find_documents(EventDescriptor,
+                                                    uid=descriptor_uid)
+        mongo_descriptor = next(mongo_descriptor)
+        kwargs['descriptor_id'] = mongo_descriptor['_id']
 
-    _normalize_object_id(kwargs, '_id')
-    events = Event.objects(__raw__=kwargs).order_by('-time')
-    events = events.as_pymongo()
-    dref_dict = dict()
-    name = Event.__name__
-    for n, f in Event._fields.items():
-        if isinstance(f, ReferenceField):
-            lookup_name = f.db_field
-            dref_dict[lookup_name] = f
+    _normalize_object_id(kwargs, 'descriptor_id')
 
-    _as_document = _AsDocumentRaw()
-    return (reorganize_event(_as_document(name, ev, dref_dict))
-            for ev in events)
+    mongo_events = _find_documents(Event, **kwargs)
+    for event_dict in mongo_events:
+        # in-place dereference the fields
+        _dereference_reference_fields(event_dict, newest)
+        # lazily turn the mongo objects into safe objects via generator
+        yield reorganize_event(Document(event_dict, "Event"))
 
 
 @_ensure_connection
-def find_last(num=1):
+def find_last(num=1, newest=True):
     """Locate the last `num` RunStart Documents
 
     Parameters
@@ -813,113 +984,21 @@ def find_last(num=1):
     -------
     run_start: iterable of metadatastore.document.Document objects
     """
-    c = count()
-    _as_document = _AsDocument()
-    for rs in RunStart.objects.order_by('-time'):
-        if next(c) == num:
-            raise StopIteration
-        yield _as_document(rs)
+    with no_dereference(RunStart) as RunStartKlass:
+        mongo_run_starts = RunStartKlass.objects.order_by('-_id')
+        mongo_run_starts = mongo_run_starts.as_pymongo()
+        for c, rs in enumerate(mongo_run_starts):
+            _dereference_reference_fields(rs)
+            yield Document(rs, "RunStart")
+            if c == num-1:
+                break
 
 
 def _todatetime(time_stamp):
     if isinstance(time_stamp, float):
-        return datetime.datetime.fromtimestamp(time_stamp)
+        return datetime.fromtimestamp(time_stamp)
     else:
         raise TypeError('Timestamp format is not correct!')
-
-
-def _replace_dict_keys(input_dict, src, dst):
-    """
-    Helper function to replace forbidden chars in dictionary keys
-
-    Parameters
-    ----------
-    input_dict : dict
-        The dict to have it's keys replaced
-
-    src : str
-        the string to be replaced
-
-    dst : str
-        The string to replace the src string with
-
-    Returns
-    -------
-    ret : dict
-        The dictionary with all instances of 'src' in the key
-        replaced with 'dst'
-
-    """
-    return {k.replace(src, dst): v for
-            k, v in six.iteritems(input_dict)}
-
-
-def _src_dst(direction):
-    """
-    Helper function to turn in/out into src/dst pair
-
-    Parameters
-    ----------
-    direction : {'in', 'out'}
-        The direction to do conversion (direction relative to mongodb)
-
-    Returns
-    -------
-    src, dst : str
-        The source and destination strings in that order.
-    """
-    if direction == 'in':
-        src, dst = '.', '[dot]'
-    elif direction == 'out':
-        src, dst = '[dot]', '.'
-    else:
-        raise ValueError('Only in/out allowed as direction params')
-
-    return src, dst
-
-
-def _replace_descriptor_data_key_dots(ev_desc, direction='in'):
-    """Replace the '.' with [dot].
-
-    Relevant because PVs can have dots in their names
-
-    Parameters
-    ---------
-
-    event_descriptor: metadatastore.odm_templates.EventDescriptor
-    EvenDescriptor instance
-
-    direction: str
-    If 'in' ->  replace . with [dot]
-    If 'out' -> replace [dot] with .
-
-    """
-    src, dst = _src_dst(direction)
-    ev_desc.data_keys = _replace_dict_keys(ev_desc.data_keys,
-                                           src, dst)
-    return ev_desc
-
-
-def _replace_event_data_key_dots(event, direction='in'):
-    """Replace the '.' with [dot].
-
-    Relevant because PVs can have dots in their names
-
-    Parameters
-    ---------
-
-    event_descriptor: metadatastore.database.event_descriptor.EventDescriptor
-    EvenDescriptor instance
-
-    direction: str
-    If 'in' ->  replace . with [dot]
-    If 'out' -> replace [dot] with .
-
-    """
-    src, dst = _src_dst(direction)
-    event.data = _replace_dict_keys(event.data,
-                                    src, dst)
-    return event
 
 
 def reorganize_event(event_document):
