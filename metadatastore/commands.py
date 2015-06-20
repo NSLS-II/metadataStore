@@ -968,7 +968,7 @@ def find_events(descriptor=None, newest=True, **kwargs):
         # in-place dereference the fields
         _dereference_reference_fields(event_dict, newest)
         # lazily turn the mongo objects into safe objects via generator
-        yield Document(event_dict, "Event")
+        yield reorganize_event(Document(event_dict, "Event"))
 
 
 @_ensure_connection
