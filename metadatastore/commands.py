@@ -1119,3 +1119,46 @@ def find_last(num=1):
     col = _DB_SINGLETON._runstart_col
     for rs in col.find().sort('time', -1).limit(num):
         yield _cache_run_start(rs)
+
+
+def get_header(run_start, allow_no_run_stop):
+    """Make header from a RunStart
+
+    This is simple a
+
+    Parameters
+    ----------
+    run_start : dict or str
+        The RunStart to build RunRecord from.  Can be either
+        a Document/dict with a 'uid' key or a uid string
+
+    allow_no_run_stop : bool, optional
+        If True, allow the RunRecord to be constructed without
+        a RunStop.  Defaults to False
+
+    Returns
+    -------
+    header : dict
+        Has keys {'run_start', 'run_stop', 'descriptor'}.
+    """
+    # make sure that our run_start is really a document
+    # and get the uid
+    run_start_uid = doc_or_uid_to_uid(run_start)
+    run_start = run_start_given_uid(run_start_uid)
+    # see if we have a run_stop, ok if we don't
+    run_stop = None
+    try:
+        run_stop = stop_by_start(run_start_uid)
+    except NoRunStop:
+        if allow_no_run_stop:
+            pass
+        else:
+            raise
+
+    try:
+        ev_descs = descriptors_by_start(run_start_uid)
+    except NoEventDescriptors:
+        ev_descs = []
+
+    return {'run_start': run_start, 'run_stop': run_stop,
+            'descriptors': ev_descs}
