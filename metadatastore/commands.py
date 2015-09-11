@@ -1121,10 +1121,11 @@ def find_last(num=1):
         yield _cache_run_start(rs)
 
 
-def get_header(run_start, allow_no_run_stop):
+def get_header(run_start, allow_no_run_stop=True):
     """Make header from a RunStart
 
-    This is simple a
+    This is simple a helper function to get all of the 'header' documents
+    out of MDS in on call.
 
     Parameters
     ----------
@@ -1134,12 +1135,13 @@ def get_header(run_start, allow_no_run_stop):
 
     allow_no_run_stop : bool, optional
         If True, allow the RunRecord to be constructed without
-        a RunStop.  Defaults to False
+        a RunStop.  Defaults to True
 
     Returns
     -------
     header : dict
-        Has keys {'run_start', 'run_stop', 'descriptor'}.
+        Has keys {'run_start', 'run_stop', 'descriptor', 'uid'}.
+        The uid is taken from the RunStart document
     """
     # make sure that our run_start is really a document
     # and get the uid
@@ -1161,4 +1163,4 @@ def get_header(run_start, allow_no_run_stop):
         ev_descs = []
 
     return {'run_start': run_start, 'run_stop': run_stop,
-            'descriptors': ev_descs}
+            'descriptors': ev_descs, 'uid': run_start['uid']}
