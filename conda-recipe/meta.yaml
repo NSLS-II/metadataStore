@@ -33,6 +33,7 @@ requirements:
 test:
   requires:
     - nslsii_dev_configuration
+    - nose
 
   # Python imports
   imports:
@@ -43,6 +44,9 @@ test:
     - metadatastore.odm_templates
     - metadatastore.document
     - metadatastore.utils
+
+  commands:
+    - nosetests metadatastore.test
 
 about:
   home: https://github.com/NSLS-II/metadatastore
