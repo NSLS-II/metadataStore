@@ -70,14 +70,15 @@ def run(run_start_uid=None, sleep=0):
 
 if __name__ == '__main__':
     import metadatastore.api as mdsc
-
+    custom = {'scan_type': 'Temperature Ramp'}
     run_start_uid = mdsc.insert_run_start(scan_id=3022013,
                                           beamline_id='testbed',
                                           owner='tester',
                                           group='awesome-devs',
                                           project='Nikea',
                                           time=common.get_time(),
-                                          uid=str(uuid.uuid4()))
+                                          uid=str(uuid.uuid4()),
+                                          custom=custom)
 
     print('run_start_uid = %s' % run_start_uid)
     run(run_start_uid)
