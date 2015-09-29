@@ -80,7 +80,8 @@ def example(func):
         if run_start_uid is None:
             run_start_uid = insert_run_start(time=get_time(), scan_id=1,
                                            beamline_id='example',
-                                           uid=str(uuid.uuid4()))
+                                           uid=str(uuid.uuid4()),
+                                           scan_type=func.__name__)
 
         # these events are already the sanitized version, not raw mongo objects
         events = func(run_start_uid, sleep)
