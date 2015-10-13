@@ -40,11 +40,7 @@ after_success:
 - source deactivate
 - git clone https://github.com/ericdill/travis-little-helper
 - if [ "${TRAVIS_PULL_REQUEST}" = "false" ] && [ "${TRAVIS_BRANCH}" == "master" ]; then
-    $CONDA_BUILD_COMMAND --output | bash travis-little-helper/anaconda-version-string.sh > version;
-    anaconda login --username nsls2builder --password $ANACONDA_PASS --hostname "$TRAVIS_PYTHON_VERSION-`cat version`";
-    bash travis-little-helper/clean-anaconda-channel.sh lightsource2-dev metadatastore true;
-    anaconda upload -u lightsource2-dev `$CONDA_BUILD_COMMAND --output`;
-    anaconda logout;
+    bash travis-little-helper clean_and_upload.sh "$CONDA_BUILD_COMMAND --output" nsls2builder $ANACONDA_PASS "$TRAVIS_PYTHON_VERSION-`cat version`" lightsource2-dev metadatastore
   fi;
 env:
   global:
