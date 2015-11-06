@@ -188,17 +188,17 @@ def test_find_events_smoke():
     mdsc.bulk_insert_events(e_desc, all_data, validate=False)
     mdsc.insert_run_stop(rs, ttime.time(), uid=str(uuid.uuid4()))
     mdsc.clear_process_cache()
-    
+
     # make sure the uid works
     next(mdsc.find_events(descriptor=e_desc))
-    
+
     mdsc.clear_process_cache()
     descriptor, = mdsc.find_descriptors(uid=e_desc)
-    
+
     mdsc.clear_process_cache()
     # make sure that searching by descriptor document works
     next(mdsc.find_events(descriptor=descriptor))
-    
+
 @raises(ValueError)
 def test_find_events_ValueError():
     list(mdsc.find_events(event_descriptor='cat'))
