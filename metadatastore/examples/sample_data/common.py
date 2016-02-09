@@ -78,9 +78,13 @@ def example(func):
     @wraps(func)
     def mock_run_start(run_start_uid=None, sleep=0, make_run_stop=True):
         if run_start_uid is None:
+            # grab the module name; this is a helpful indication of the "scan"
+            func_name = func.__module__.split('.')[-1]
+            custom = {'scan_type': func_name}
             run_start_uid = insert_run_start(time=get_time(), scan_id=1,
-                                           beamline_id='example',
-                                           uid=str(uuid.uuid4()))
+                                             beamline_id='example',
+                                             uid=str(uuid.uuid4()),
+                                             custom=custom)
 
         # these events are already the sanitized version, not raw mongo objects
         events = func(run_start_uid, sleep)

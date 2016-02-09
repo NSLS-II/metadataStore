@@ -67,12 +67,14 @@ def run(run_start=None, sleep=0):
 
 if __name__ == '__main__':
     import metadatastore.api as mdsc
+    custom = {'scan_type': 'Multisource Event'}
     run_start_uid = mdsc.insert_run_start(scan_id=2032013,
                                           beamline_id='testbed',
                                           owner='tester',
                                           group='awesome-devs',
                                           project='Nikea',
                                           time=0.,
-                                          uid=str(uuid.uuid4()),)
+                                          uid=str(uuid.uuid4()),
+                                          custom=custom)
 
     run(run_start_uid)
