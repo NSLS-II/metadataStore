@@ -119,3 +119,8 @@ target/
 
 *.swo
 *.swp
+
+# asv
+bench/results
+bench/env
+bench/metadatastore
