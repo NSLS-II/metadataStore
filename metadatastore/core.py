@@ -1007,7 +1007,7 @@ def find_events(start_col, start_cache,
 
     _format_time(kwargs, tz)
     col = event_col
-    events = col.find(kwargs)
+    events = col.find(kwargs, sort=[('time', pymongo.ASCENDING)])
 
     for ev in events:
         ev.pop('_id', None)
