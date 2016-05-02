@@ -30,7 +30,7 @@ before_install:
   # init metadatastore configuration
   - . ~/scripts/init-metadatastore.sh
 
-before_install:
+install:
 - export GIT_FULL_HASH=`git rev-parse HEAD`
 - conda create -n testenv pip pytest python=$TRAVIS_PYTHON_VERSION pymongo six pyyaml numpy boltons doct pytz
 - source activate testenv
