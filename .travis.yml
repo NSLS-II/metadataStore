@@ -1,5 +1,8 @@
 language: python
 sudo: false
+git:
+  # hack around git fetch --unshallow failing and nuking the whole CI
+  depth: 9999999
 env:
   global:
     - ANACONDA_USER=lightsource2
