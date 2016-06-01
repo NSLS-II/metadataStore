@@ -1,6 +1,7 @@
 from __future__ import division
+import time as ttime
 import uuid
-from metadatastore.api import insert_event, insert_descriptor, find_events
+import metadatastore.commands
 import numpy as np
 from metadatastore.examples.sample_data import common
 
@@ -10,8 +11,11 @@ deadband_size = 0.9
 num_exposures = 23
 
 
-@common.example
-def run(run_start=None, sleep=0):
+def run(run_start=None, sleep=0, mds=metadatastore.commands):
+    run_start = mds.insert_run_start(time=ttime.time(),
+                                     scan_id=1,
+                                     beamline_id='example',
+                                     uid=str(uuid.uuid4()))
     if sleep != 0:
         raise NotImplementedError("A sleep time is not implemented for this "
                                   "example.")
@@ -26,28 +30,29 @@ def run(run_start=None, sleep=0):
                                     dtype='number')}
     data_keys2 = {'Tsam': dict(source='PV:ES:Tsam', dtype='number'),
                   'Troom': dict(source='PV:ES:Troom', dtype='number')}
-    ev_desc1_uid = insert_descriptor(run_start=run_start,
-                                     data_keys=data_keys1,
-                                     time=common.get_time(),
-                                     uid=str(uuid.uuid4()))
-    ev_desc2_uid = insert_descriptor(run_start=run_start,
-                                     data_keys=data_keys2,
-                                     time=common.get_time(),
-                                     uid=str(uuid.uuid4()))
+    ev_desc1_uid = mds.insert_descriptor(run_start=run_start,
+                                        data_keys=data_keys1,
+                                        time=ttime.time(),
+                                        uid=str(uuid.uuid4()))
+    ev_desc2_uid = mds.insert_descriptor(run_start=run_start,
+                                        data_keys=data_keys2,
+                                        time=ttime.time(),
+                                        uid=str(uuid.uuid4()))
     # Create Events.
     events = []
 
     # Point Detector Events
-    base_time = common.get_time()
+    base_time = ttime.time()
     for i in range(num_exposures):
         time = float(i + 0.5 * rs.randn()) + base_time
         data = {'point_det': (point_det_data[i], time)}
         data = {'point_det': point_det_data[i]}
         timestamps = {'point_det': time}
-        event_uid = insert_event(descriptor=ev_desc1_uid, seq_num=i, time=time,
-                                 data=data, uid=str(uuid.uuid4()),
-                                 timestamps=timestamps)
-        event, = find_events(uid=event_uid)
+        event_uid = mds.insert_event(descriptor=ev_desc1_uid, seq_num=i,
+                                     time=time, data=data,
+                                     uid=str(uuid.uuid4()),
+                                     timestamps=timestamps)
+        event, = mds.find_events(uid=event_uid)
         events.append(event)
 
     # Temperature Events
@@ -57,17 +62,20 @@ def run(run_start=None, sleep=0):
                 'Troom': temp + 10}
         timestamps = {'Tsam': time,
                       'Troom': time}
-        event_uid = insert_event(descriptor=ev_desc2_uid, time=time,
-                                 data=data, seq_num=i, uid=str(uuid.uuid4()),
-                                 timestamps=timestamps)
-        event, = find_events(uid=event_uid)
+        event_uid = mds.insert_event(descriptor=ev_desc2_uid, time=time,
+                                     data=data, seq_num=i, uid=str(uuid.uuid4()),
+                                     timestamps=timestamps)
+        event, = mds.find_events(uid=event_uid)
         events.append(event)
+    run_stop_uid = mds.insert_run_stop(run_start, time=time,
+                                       exit_status='success',
+                                       uid=str(uuid.uuid4()))
     return events
 
 
 if __name__ == '__main__':
     import metadatastore.api as mdsc
-    run_start_uid = mdsc.insert_run_start(scan_id=2032013,
+    run_start = mdsc.insert_run_start(scan_id=2032013,
                                           beamline_id='testbed',
                                           owner='tester',
                                           group='awesome-devs',
@@ -75,4 +83,4 @@ if __name__ == '__main__':
                                           time=0.,
                                           uid=str(uuid.uuid4()),)
 
-    run(run_start_uid)
+    run(run_start)

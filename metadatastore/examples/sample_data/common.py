@@ -69,28 +69,3 @@ def noisy(val, sigma=0.01):
         return val + sigma * np.random.randn()
     else:
         return val + sigma * np.random.randn(len(val)).reshape(val.shape)
-
-
-get_time = ttime.time
-
-
-def example(func):
-    @wraps(func)
-    def mock_run_start(run_start_uid=None, sleep=0, make_run_stop=True):
-        if run_start_uid is None:
-            run_start_uid = insert_run_start(time=get_time(), scan_id=1,
-                                           beamline_id='example',
-                                           uid=str(uuid.uuid4()))
-
-        # these events are already the sanitized version, not raw mongo objects
-        events = func(run_start_uid, sleep)
-        # Infer the end run time from events, since all the times are
-        # simulated and not necessarily based on the current time.
-        time = max([event['time'] for event in events])
-        if make_run_stop:
-            run_stop_uid = insert_run_stop(run_start_uid, time=time,
-                                         exit_status='success',
-                                         uid=str(uuid.uuid4()))
-            run_stop, = find_run_stops(uid=run_stop_uid)
-        return events
-    return mock_run_start

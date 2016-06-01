@@ -2,14 +2,10 @@ import uuid
 from metadatastore.api import db_connect, db_disconnect
 from metadatastore import conf
 from copy import deepcopy
+from metadatastore.utils import create_test_database
 
 conn = None
-testing_config = {
-    'database': "mds_testing_disposable_{}".format(str(uuid.uuid4())),
-    'host': 'localhost',
-    'port': 27017,
-    'timezone': 'US/Eastern'}
-
+testing_config = create_test_database('localhost')
 old_connection_info = None
 
 

@@ -30,14 +30,14 @@ def test_noisy_for_smoke(v):
     'failing_time, mod',
     itertools.product([-1, 1], [temperature_ramp, multisource_event])
 )
-def test_sleepy_failures(failing_time, mod):
+def test_sleepy_failures(failing_time, mod, mds_all):
     with pytest.raises(NotImplementedError):
-        mod.run(sleep=failing_time)
+        mod.run(sleep=failing_time, mds=mds_all)
 
 
-def test_multisource_event():
-    multisource_event.run()
+def test_multisource_event(mds_all):
+    multisource_event.run(mds=mds_all)
 
 
-def test_temperature_ramp():
-    temperature_ramp.run()
+def test_temperature_ramp(mds_all):
+    temperature_ramp.run(mds=mds_all)

@@ -1,8 +1,7 @@
 from __future__ import division
-from metadatastore.api import (insert_event, insert_descriptor,
-                               find_events, insert_run_stop)
-
+import metadatastore.commands
 import uuid
+import time as ttime
 
 import numpy as np
 from metadatastore.examples.sample_data import common
@@ -13,8 +12,11 @@ deadband_size = 0.9
 num_exposures = 17
 
 
-@common.example
-def run(run_start_uid=None, sleep=0):
+def run(run_start=None, sleep=0, mds=metadatastore.commands):
+    run_start = mds.insert_run_start(time=ttime.time(),
+                                     scan_id=1,
+                                     beamline_id='example',
+                                     uid=str(uuid.uuid4()))
     if sleep != 0:
         raise NotImplementedError("A sleep time is not implemented for this "
                                   "example.")
@@ -27,20 +29,20 @@ def run(run_start_uid=None, sleep=0):
     # Create Event Descriptors
     data_keys1 = {'point_det': dict(source='PV:ES:PointDet', dtype='number')}
     data_keys2 = {'Tsam': dict(source='PV:ES:Tsam', dtype='number')}
-    ev_desc1_uid = insert_descriptor(run_start=run_start_uid,
-                                     data_keys=data_keys1,
-                                     time=common.get_time(),
-                                     uid=str(uuid.uuid4()))
-    ev_desc2_uid = insert_descriptor(run_start=run_start_uid,
-                                     data_keys=data_keys2,
-                                     time=common.get_time(),
-                                     uid=str(uuid.uuid4()))
+    ev_desc1_uid = mds.insert_descriptor(run_start=run_start,
+                                         data_keys=data_keys1,
+                                         time=ttime.time(),
+                                         uid=str(uuid.uuid4()))
+    ev_desc2_uid = mds.insert_descriptor(run_start=run_start,
+                                         data_keys=data_keys2,
+                                         time=ttime.time(),
+                                         uid=str(uuid.uuid4()))
 
     # Create Events.
     events = []
 
     # Point Detector Events
-    base_time = common.get_time()
+    base_time = ttime.time()
     for i in range(num_exposures):
         time = float(2 * i + 0.5 * rs.randn()) + base_time
         data = {'point_det': point_det_data[i]}
@@ -48,9 +50,9 @@ def run(run_start_uid=None, sleep=0):
         event_dict = dict(descriptor=ev_desc1_uid, seq_num=i,
                           time=time, data=data, timestamps=timestamps,
                           uid=str(uuid.uuid4()))
-        event_uid = insert_event(**event_dict)
+        event_uid = mds.insert_event(**event_dict)
         # grab the actual event from metadatastore
-        event, = find_events(uid=event_uid)
+        event, = mds.find_events(uid=event_uid)
         events.append(event)
         assert event['data'] == event_dict['data']
 
@@ -62,10 +64,14 @@ def run(run_start_uid=None, sleep=0):
         event_dict = dict(descriptor=ev_desc2_uid, time=time,
                           data=data, timestamps=timestamps, seq_num=i,
                           uid=str(uuid.uuid4()))
-        event_uid = insert_event(**event_dict)
-        event, = find_events(uid=event_uid)
+        event_uid = mds.insert_event(**event_dict)
+        event, = mds.find_events(uid=event_uid)
         events.append(event)
         assert event['data'] == event_dict['data']
+
+    run_stop_uid = mds.insert_run_stop(run_start, time=time,
+                                       exit_status='success',
+                                       uid=str(uuid.uuid4()))
 
     return events
 
@@ -73,12 +79,12 @@ def run(run_start_uid=None, sleep=0):
 if __name__ == '__main__':
     import metadatastore.api as mdsc
 
-    run_start_uid = mdsc.insert_run_start(scan_id=3022013,
+    run_start = mdsc.insert_run_start(scan_id=3022013,
                                           beamline_id='testbed',
                                           owner='tester',
                                           group='awesome-devs',
                                           project='Nikea',
-                                          time=common.get_time(),
+                                          time=ttime.time(),
                                           uid=str(uuid.uuid4()))
 
-    run(run_start_uid)
+    run(run_start)
