@@ -4,6 +4,8 @@
 
 
 # metadatastore
+
+[![Join the chat at https://gitter.im/NSLS-II/metadatastore](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/NSLS-II/metadatastore?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 NSLS2 Beamlines metadatastore prototype implemented in MongoDB.
 
 ## Conda Recipes
