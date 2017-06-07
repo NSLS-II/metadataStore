@@ -68,9 +68,8 @@ def syn_data(data_keys, count, is_np=False):
     return all_data
 
 
-def test_pickle():
-    from metadatastore.mds import MDS
-    md = MDS(config={'host': 'portland'}, version=1)
+def test_pickle(mds_all):
+    md = mds_all(config={'host': 'portland'}, version=1)
     md2 = pickle.loads(pickle.dumps(md))
 
     assert md.version == md2.version
